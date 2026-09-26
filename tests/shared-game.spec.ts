@@ -10,6 +10,7 @@ test('one server deal gives four private hands and one clockwise trick', () => {
   for (const player of players.slice(1)) game = applySharedAction(game, player.id, { type: 'join', player }, ++now);
   expect(() => applySharedAction(game, players[1].id, { type: 'start' }, ++now)).toThrow('Only the dealer');
   game = applySharedAction(game, players[0].id, { type: 'start' }, ++now);
+  expect(game.auction.turn).toBe(1);
   expect(game.hands.map(hand => hand.length)).toEqual([13, 13, 13, 13]);
   expect(new Set(game.hands.flat().map(card => card.id)).size).toBe(52);
   for (let seat = 0; seat < 4; seat++) {
@@ -18,12 +19,14 @@ test('one server deal gives four private hands and one clockwise trick', () => {
     expect(view.cards).toEqual(game.hands[seat]);
     expect(view).not.toHaveProperty('hands');
   }
-  game = applySharedAction(game, players[0].id, { type: 'bid', bid: { level: 1, suit: 'clubs' } }, ++now);
-  for (const player of players.slice(1)) game = applySharedAction(game, player.id, { type: 'bid', bid: null }, ++now);
+  expect(() => applySharedAction(game, players[0].id, { type: 'bid', bid: { level: 1, suit: 'clubs' } }, ++now)).toThrow('not your turn');
+  game = applySharedAction(game, players[1].id, { type: 'bid', bid: { level: 1, suit: 'clubs' } }, ++now);
+  for (const seat of [2, 3, 0]) game = applySharedAction(game, players[seat].id, { type: 'bid', bid: null }, ++now);
   expect(game.phase).toBe('partner');
-  game = applySharedAction(game, players[0].id, { type: 'partner', card: game.partner }, ++now);
-  expect(game.playTurn).toBe(1);
-  for (let seat = 1; seat <= 4; seat++) {
+  expect(game.declarer).toBe(1);
+  game = applySharedAction(game, players[1].id, { type: 'partner', card: game.partner }, ++now);
+  expect(game.playTurn).toBe(2);
+  for (let seat = 2; seat <= 5; seat++) {
     const current = seat % 4;
     const card = legalCards(game.hands[current], game.plays)[0];
     expect(() => applySharedAction(game, players[(current + 1) % 4].id, { type: 'play', cardId: card.id }, ++now)).toThrow('not your turn');
@@ -35,4 +38,8 @@ test('one server deal gives four private hands and one clockwise trick', () => {
   game = advanceSharedGame(game, now + 2950);
   expect(game.counts.reduce((sum, value) => sum + value, 0)).toBe(1);
   expect(game.plays).toHaveLength(0);
+  game = applySharedAction({ ...game, phase: 'ended' }, players[0].id, { type: 'restart' }, now + 3000);
+  expect(game.dealerId).toBe(players[1].id);
+  game = applySharedAction(game, players[1].id, { type: 'start' }, now + 3001);
+  expect(game.auction.turn).toBe(2);
 });

@@ -45,6 +45,9 @@ test('short phone viewport keeps the home and every game phase on one screen', a
   expect(Math.abs(startBottom - rulesBottom)).toBeLessThan(2);
   const waitingSize = (await page.locator('.circle-stage').boundingBox())!.width;
   await page.getByRole('button', { name: 'Start game', exact: true }).click();
+  await expect(page.locator('.bid-turn-message')).toHaveText('@marcus to bid');
+  expect((await page.locator('.centre-bid-suit .suit-icon').boundingBox())!.width).toBeLessThan(49);
+  expect((await page.locator('.bid-turn-message').evaluate(el => parseFloat(getComputedStyle(el).fontSize)))).toBeLessThan(17);
   await expect.poll(fits).toBe(true);
   const hand = (await page.locator('.minimal-hand').boundingBox())!;
   const panel = (await page.locator('.round-control-slot').boundingBox())!;
@@ -121,6 +124,7 @@ test('mobile copy, settings, dealer crosses, random deal and resume', async ({ p
   await expect(page.locator('.minimal-table')).toHaveAttribute('data-phase', 'bidding');
   await page.getByRole('button', { name: 'Kick @rachel' }).click();
   await expect(page.locator('.minimal-table')).toHaveAttribute('data-phase', 'waiting');
+  await expect(page.getByText('Open seat')).toHaveCount(0);
   await expect(page.locator('.lobby-help')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start game', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Fill left seat' }).click(); await page.getByRole('dialog').getByRole('button', { name: '@rachel' }).click();
@@ -243,11 +247,12 @@ test('placing a bid removes reshuffle even when the hand is weak', async ({ page
   await page.goto('/?reshuffleTest=1');
   await page.getByRole('button', { name: 'Create game', exact: true }).click();
   await page.getByRole('button', { name: 'Start game', exact: true }).click();
-  await expect(page.locator('.bid-turn-message')).toHaveText('@you to bid');
+  await expect(page.locator('.bid-turn-message')).toHaveText('@marcus to bid');
   await expect(page.getByText('Thinking…')).toHaveCount(0);
   await expect(page.getByText('Your call.')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reshuffle', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Bid 1 clubs', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Bid 1 diamonds', exact: true })).toBeEnabled({ timeout: 6000 });
+  await page.getByRole('button', { name: 'Bid 1 diamonds', exact: true }).click();
   expect(handStrength((await snapshot(page)).hands[0])).toBe(0);
   await expect(page.getByRole('button', { name: 'Reshuffle', exact: true })).toHaveCount(0);
 });
@@ -363,14 +368,14 @@ test('completed trick pauses, awards session wins once, and feeds percentage lea
 test('random auction defaults, partner call, two-tap play and selected-card resume', async ({ page }) => {
   test.setTimeout(60000);
   await create(page); await page.getByRole('button', { name: 'Start game', exact: true }).click();
-  await page.getByRole('button', { name: 'Bid 1 clubs', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Bid 1 hearts', exact: true })).toBeEnabled({ timeout: 6000 });
+  await expect(page.getByRole('button', { name: 'Bid 1 diamonds', exact: true })).toBeEnabled({ timeout: 6000 });
   await page.getByLabel('Bid level').selectOption('7'); await page.getByLabel('Bid suit').selectOption('no-trump');
   await page.getByRole('button', { name: 'Bid 7 no-trump', exact: true }).click();
   await expect(page.locator('.minimal-table')).toHaveAttribute('data-phase', 'partner', { timeout: 6000 });
   const state = await snapshot(page); expect(state.hands[0].some((c: { id: string }) => c.id === state.partner.id)).toBeFalsy();
   expect(state.hands[state.partnerSeat].some((c: { id: string }) => c.id === state.partner.id)).toBeTruthy();
   await page.getByRole('button', { name: /^Call / }).click();
+  await expect(page.locator('.partner-announcement')).toContainText(`@${['you', 'marcus', 'rachel', 'weijie'][state.partnerSeat]}`);
   await expect(page.locator('[data-seat=left]')).toHaveClass(/is-turn/);
   const card = page.locator('.minimal-hand .playing-card:enabled').first(); await expect(card).toBeVisible({ timeout: 6000 });
   const name = await card.getAttribute('aria-label'); await card.click({ position: { x: 10, y: 18 } }); await expect(card).toHaveAttribute('aria-pressed', 'true');
@@ -400,9 +405,21 @@ test('clear table geometry, inward labels and matching round actions', async ({ 
     if (position === 'top') expect(label.y).toBeGreaterThan(icon.y + icon.height);
     if (position === 'bottom') expect(label.y + label.height).toBeLessThan(icon.y);
   }
-  await seed(page, { phase: 'bidding', bids: [{ level: 1, suit: 'clubs' }, 'Pass', 'Pass', 'Pass'] });
+  await seed(page, { phase: 'bidding', bids: [{ level: 1, suit: 'clubs' }, { level: 1, suit: 'diamonds' }, { level: 1, suit: 'hearts' }, { level: 1, suit: 'spades' }] });
   await expect(page.locator('.trick-count')).toHaveCount(0);
   await expect(page.locator('.seat-bid').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const leftBid = page.locator('[data-seat=left] .seat-bid');
+  const rightBid = page.locator('[data-seat=right] .seat-bid');
+  await expect(rightBid).toHaveCSS('font-size', await leftBid.evaluate(el => getComputedStyle(el).fontSize));
+  expect((await rightBid.locator('.suit-icon').boundingBox())!.width).toBe((await leftBid.locator('.suit-icon').boundingBox())!.width);
+  const leftBidBox = (await leftBid.boundingBox())!;
+  const rightBidBox = (await rightBid.boundingBox())!;
+  const leftIconBox = (await page.locator('[data-seat=left] .seat-avatar-button').boundingBox())!;
+  const rightIconBox = (await page.locator('[data-seat=right] .seat-avatar-button').boundingBox())!;
+  expect(leftBidBox.x).toBeGreaterThan(leftIconBox.x + leftIconBox.width);
+  expect(rightBidBox.x + rightBidBox.width).toBeLessThan(rightIconBox.x);
+  expect(Math.abs(leftBidBox.y + leftBidBox.height / 2 - leftIconBox.y - leftIconBox.height / 2)).toBeLessThan(4);
+  expect(Math.abs(rightBidBox.y + rightBidBox.height / 2 - rightIconBox.y - rightIconBox.height / 2)).toBeLessThan(4);
   await page.screenshot({ path: 'test-results/clear-bidding-' + info.project.name + '.png', animations: 'disabled' });
   await seed(page, { phase: 'partner' });
   await expect(page.locator('.trick-count')).toHaveCount(0);
@@ -412,6 +429,7 @@ test('clear table geometry, inward labels and matching round actions', async ({ 
   await seed(page, { phase: 'playing', plays: [0,1,2,3].map(seat => ({ seat, card: card(String(seat + 2)) })), trickStatus: 'holding' });
   await expect(page.locator('.trick-count .trick-pile')).toHaveCount(4);
   await expect(page.locator('.table-play .card-art').first()).toHaveAttribute('src', '/cards/clubs/c2.png');
+  await expect(page.locator('.table-play .card-art').first()).toHaveAttribute('loading', 'eager');
   await expect(page.locator('.table-play .table-card-rank')).toHaveCount(4);
   await expect(page.locator('.minimal-hand .table-card-rank')).toHaveCount(0);
   const rects = await page.locator('.table-play .card-trick').evaluateAll(elements => elements.map(el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));

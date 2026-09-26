@@ -301,6 +301,28 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
 .simple-app.on-game .table-play.from-top { --from-x: 0px; --from-y: -35px; }
 .simple-app.on-game .table-play.from-right { --from-x: 64px; --from-y: 0px; }
 .simple-app.on-game .circle-seat.position-bottom .crown { top: -4px; }
+.simple-app.on-game .circle-stage { container-type: inline-size; }
+.simple-app.on-game .table-center .center-message { width: min(178px, 60cqw); }
+.simple-app.on-game .table-center .center-message h1 { font-size: clamp(18px, 6cqw, 23px); }
+.simple-app.on-game .table-center .bid-turn-message,
+.simple-app.on-game .table-center .your-turn-note { font-size: clamp(14px, 4.7cqw, 18px); }
+.simple-app.on-game .table-center .centre-bid-suit { font-size: clamp(24px, 8cqw, 31px); }
+.simple-app.on-game .table-center .centre-bid-suit .suit-icon,
+.simple-app.on-game .table-center .center-message > .suit-icon { width: clamp(38px, 13cqw, 49px); height: clamp(38px, 13cqw, 49px); }
+.simple-app.on-game .table-center .centre-suit-slide .suit-icon { width: clamp(42px, 14cqw, 53px); height: clamp(42px, 14cqw, 53px); }
+.simple-app.on-game .table-center .winner-message { width: min(118px, 44cqw); }
+.simple-app.on-game .table-center .winner-message p,
+.simple-app.on-game .table-center .reshuffle-table-message { font-size: clamp(13px, 4cqw, 16px); }
+.simple-app.on-game .table-center .partner-announcement { width: min(154px, 52cqw); display: grid; gap: 2px; text-align: center; animation: partner-arrives .55s cubic-bezier(.18,.9,.25,1.15) both; }
+.simple-app.on-game .partner-announcement span { color: var(--table-muted); font-size: clamp(13px, 4cqw, 16px); }
+.simple-app.on-game .partner-announcement strong { color: var(--text); font-size: clamp(17px, 5.4cqw, 21px); line-height: 1.1; overflow-wrap: anywhere; }
+.simple-app.on-game .partner-announcement small { color: var(--gold); font-size: clamp(12px, 3.8cqw, 15px); line-height: 1.2; }
+@keyframes partner-arrives { from { opacity: 0; transform: scale(.75) rotate(-5deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .simple-app.on-game .partner-announcement { animation: none; } }
+.simple-app.on-game .circle-seat .seat-bid { display: inline-flex; align-items: center; font-size: clamp(14px, 4.4cqw, 16px); line-height: 1.1; }
+.simple-app.on-game .circle-seat .seat-bid .suit-icon { width: clamp(18px, 5.6cqw, 22px); height: clamp(18px, 5.6cqw, 22px); }
+.simple-app.on-game .circle-seat.position-left .seat-bid { left: calc(50% + 39px); right: auto; top: 17px; }
+.simple-app.on-game .circle-seat.position-right .seat-bid { right: calc(50% + 39px); left: auto; top: 17px; }
 .simple-app.on-game .circle-seat.position-left .kick-player { right: calc(50% + 20px); }
 .simple-app.on-game .circle-seat.position-right .kick-player { left: calc(50% + 20px); }
 .simple-app.on-game .circle-seat.position-top .kick-player { left: calc(50% - 51px); top: -11px; }

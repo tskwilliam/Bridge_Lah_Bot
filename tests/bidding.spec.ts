@@ -12,18 +12,20 @@ test('every bid is strictly ordered, including level boundaries and no trump', (
 });
 test('auction rejects invalid turns and low bids, ending after three passes', () => {
   let auction = newAuction(0);
-  expect(auctionCall(auction, 1, allBids[0])).toBe(auction);
-  auction = auctionCall(auction, 0, { level: 1, suit: 'hearts' });
-  expect(auctionCall(auction, 1, { level: 1, suit: 'diamonds' })).toBe(auction);
-  auction = auctionCall(auction, 1, null);
+  expect(auction.turn).toBe(1);
+  expect(auctionCall(auction, 0, allBids[0])).toBe(auction);
+  auction = auctionCall(auction, 1, { level: 1, suit: 'hearts' });
+  expect(auctionCall(auction, 2, { level: 1, suit: 'diamonds' })).toBe(auction);
   auction = auctionCall(auction, 2, null);
-  expect(auction.complete).toBe(false);
   auction = auctionCall(auction, 3, null);
+  expect(auction.complete).toBe(false);
+  auction = auctionCall(auction, 0, null);
   expect(auction.complete).toBe(true);
-  expect(auction.bidder).toBe(0);
+  expect(auction.bidder).toBe(1);
   let passed = newAuction(0);
-  for (let seat = 0; seat < 4; seat++) passed = auctionCall(passed, seat, null);
+  for (const seat of [1, 2, 3, 0]) passed = auctionCall(passed, seat, null);
   expect(passed.allPassed).toBe(true);
+  expect(newAuction(3).turn).toBe(0);
 });
 test('partner defaults to highest unheld winning-suit card and hand is sorted', () => {
   expect(suggestPartner(hand, { level: 1, suit: 'diamonds' })).toMatchObject({ rank: 'A', suit: 'diamonds' });

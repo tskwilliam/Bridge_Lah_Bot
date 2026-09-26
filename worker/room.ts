@@ -73,6 +73,13 @@ export class GroupRoom {
 
   async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
+    if (path === '/clear' && request.method === 'POST') return this.serial(async () => {
+      await this.ctx.storage.deleteAll();
+      for (const socket of this.ctx.getWebSockets()) {
+        try { socket.send(JSON.stringify({ type: 'removed' })); socket.close(1000, 'Bot left group'); } catch { /* Socket already closed. */ }
+      }
+      return answer({ ok: true });
+    });
     if (path === '/live' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);

@@ -12,11 +12,11 @@ interface Env {
   TELEGRAM_WEBHOOK_SECRET: string;
 }
 interface BotMessage { text?: string; chat: { id: number; type: string } }
-interface BotUpdate { message?: BotMessage }
+interface BotUpdate { message?: BotMessage; my_chat_member?: { chat: { id: number; type: string }; old_chat_member: { status: string }; new_chat_member: { status: string } } }
 interface ChatMemberResponse { ok: boolean; result?: { status: string; is_member?: boolean } }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
-const playerFrom = (user: TelegramUser): SharedPlayer => ({ id: String(user.id), username: user.username ? `@${user.username}` : user.first_name, initials: user.first_name.slice(0, 1).toUpperCase(), photoUrl: user.photo_url });
+const playerFrom = (user: TelegramUser): SharedPlayer => ({ id: String(user.id), username: user.username ? `@${user.username}` : 'Guest', initials: user.username?.slice(0, 1).toUpperCase() ?? '?', photoUrl: user.photo_url });
 
 async function botCall(env: Env, method: string, body: object) {
   const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
@@ -42,6 +42,10 @@ function roomCall(env: Env, chatId: number, path: string, body: object) {
 async function handleWebhook(request: Request, env: Env) {
   if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TELEGRAM_WEBHOOK_SECRET) return json({ error: 'Unauthorized' }, 401);
   const update = await request.json() as BotUpdate;
+  const membership = update.my_chat_member;
+  if (membership && ['group', 'supergroup'].includes(membership.chat.type) && !['left', 'kicked'].includes(membership.old_chat_member.status) && ['left', 'kicked'].includes(membership.new_chat_member.status)) {
+    return roomCall(env, membership.chat.id, '/clear', {});
+  }
   const message = update.message;
   if (!message || !['group', 'supergroup'].includes(message.chat.type)) return json({ ok: true });
   const command = /^\/(play|bridge)(?:@(\w+))?(?:\s|$)/i.exec(message.text ?? '');
@@ -80,6 +84,8 @@ async function handleApi(request: Request, env: Env, url: URL) {
   if (url.pathname === '/api/home' && request.method === 'GET') return roomCall(env, session.chatId, '/home', { session });
   if (url.pathname === '/api/leaderboard' && request.method === 'GET') return roomCall(env, session.chatId, '/leaderboard', { session });
   if (url.pathname === '/api/games' && request.method === 'POST') {
+    const membership = await botCall(env, 'getChatMember', { chat_id: session.chatId, user_id: session.user.id }) as ChatMemberResponse;
+    if (!membership.result || ['left', 'kicked'].includes(membership.result.status) || (membership.result.status === 'restricted' && membership.result.is_member === false)) return json({ error: 'Not a group member' }, 403);
     const id = crypto.randomUUID().replace(/-/g, '');
     const response = await roomCall(env, session.chatId, '/create', { session, id, player: playerFrom(session.user) });
     if (!response.ok) return response;
@@ -112,7 +118,13 @@ export default {
       if (url.pathname === '/telegram/webhook' && request.method === 'POST') return handleWebhook(request, env);
       if (url.pathname.startsWith('/api/')) return handleApi(request, env, url);
       if (url.pathname.startsWith('/telegram/')) return json({ error: 'Not found' }, 404);
-      return env.ASSETS.fetch(request);
+      const asset = await env.ASSETS.fetch(request);
+      if (asset.ok && /^\/(cards|card-previews|icons)\/.+\.png$/i.test(url.pathname)) {
+        const headers = new Headers(asset.headers);
+        headers.set('Cache-Control', 'public, max-age=3600');
+        return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
+      }
+      return asset;
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Worker request failed');
       return json({ error: 'Service unavailable' }, 503);

@@ -18,7 +18,7 @@ To verify the live game, add the bot as a group administrator and send `/play` i
 3. In the Cloudflare Worker, add three **secrets** (not plain variables): `BOT_TOKEN` (your BotFather HTTP API token), `LINK_SECRET` (a long random string), and `TELEGRAM_WEBHOOK_SECRET` (a separate random string using letters, numbers, `_`, or `-`). You can add each with `npx wrangler secret put NAME`, which prompts for the value. The bot token must never go into GitHub, `.env`, `wrangler.jsonc` variables, or a `VITE_*` variable.
 4. Deploy again if Cloudflare asks you to after adding secrets. Check `https://YOUR-WORKER-URL/api/health`; it should return `{"ok":true}`.
 5. In [BotFather](https://t.me/BotFather), select `@bridge_lah_bot`, choose **Mini App** > **Create Direct Link**, enter the HTTPS Worker URL, and choose short name `play`. This enables the `https://t.me/bridge_lah_bot/play?startapp=...` links sent by the bot.
-6. Register `https://YOUR-WORKER-URL/telegram/webhook` with Telegram's [`setWebhook`](https://core.telegram.org/bots/api#setwebhook), passing the same `TELEGRAM_WEBHOOK_SECRET` as `secret_token`. A PowerShell example is below. Only the `message` update type is needed.
+6. Register `https://YOUR-WORKER-URL/telegram/webhook` with Telegram's [`setWebhook`](https://core.telegram.org/bots/api#setwebhook), passing the same `TELEGRAM_WEBHOOK_SECRET` as `secret_token`. A PowerShell example is below. Subscribe to both `message` and `my_chat_member`: the latter lets the Worker erase the group's games, leaderboard, settings, and live sessions when the bot is removed. Re-register the existing webhook with these update types when upgrading an already deployed bot.
 7. Add `@bridge_lah_bot` to the Telegram group **as an administrator**. Telegram only guarantees [`getChatMember`](https://core.telegram.org/bots/api#getchatmember) for checking other users when the bot is an administrator. Send `/play` in the group. The bot replies with an **Open Bridge Lah!** button. The first player opens it and taps **Create game**. The bot posts a unique **Take a seat** button for that game; three other members use it to join.
 
 PowerShell webhook registration (the token and secret are entered at prompts, not written into the repository):
@@ -27,7 +27,7 @@ PowerShell webhook registration (the token and secret are entered at prompts, no
 $botToken = Read-Host 'Bot token'
 $hookSecret = Read-Host 'Webhook secret'
 $workerUrl = Read-Host 'Worker HTTPS URL (without trailing slash)'
-Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$botToken/setWebhook" -Body @{ url = "$workerUrl/telegram/webhook"; secret_token = $hookSecret; allowed_updates = '["message"]' }
+Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$botToken/setWebhook" -Body @{ url = "$workerUrl/telegram/webhook"; secret_token = $hookSecret; allowed_updates = '["message","my_chat_member"]' }
 Remove-Variable botToken, hookSecret
 ```
 
@@ -38,5 +38,7 @@ Remove-Variable botToken, hookSecret
 Use four real Telegram accounts. Check that all four see the same seats, bid, cards on the table, tricks, and result, but only their own hand. Then close and reopen a player's game using **Resume game**. Verify the dealer's seat swap, kick, and settings; another player's quit; reshuffle; two simultaneous games in the same group; and the group leaderboard. This live Telegram test requires a deployed Worker and cannot be completed by the local preview.
 
 The bot's profile and bare Direct Link have no group link by themselves, so open the app through the `/play` group message or a game invitation. A browser opened outside Telegram displays the local design preview.
+
+The app keeps each player's Telegram numeric ID for seat and score ownership, plus their username and optional profile photo URL for display. A group ID is needed to isolate its games. Telegram's signed launch data includes additional fields used only while checking authenticity; they are not saved in the session or group database. When Telegram reports that the bot has left or been removed from a group, the group Durable Object deletes its entire stored state and closes its game connections. This requires `my_chat_member` in the webhook's `allowed_updates`.
 
 References: [Telegram Mini Apps and direct links](https://core.telegram.org/bots/webapps), [Cloudflare Worker static assets](https://developers.cloudflare.com/workers/static-assets/), [Durable Object WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/), [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/).

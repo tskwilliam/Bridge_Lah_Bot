@@ -13,6 +13,7 @@ function testRoom() {
     get: async (key: string) => values.get(key),
     put: async (key: string, value: unknown) => { values.set(key, value); },
     delete: async (key: string) => { values.delete(key); },
+    deleteAll: async () => { values.clear(); },
     list: async ({ prefix }: { prefix: string }) => new Map([...values].filter(([key]) => key.startsWith(prefix))),
     setAlarm: async () => undefined,
     deleteAlarm: async () => undefined,
@@ -52,4 +53,16 @@ test('a room stores one authoritative deal, private views, settings, and active 
   expect(next.body.state?.breakTrump).toBe(true);
   expect(next.body.state?.reshuffleThreshold).toBe(5);
   expect((await call('/home', 2)).body.resumeId).toBe(nextId);
+});
+
+test('removing the bot clears every game, score, and remembered setting in the group', async () => {
+  const { call, values } = testRoom();
+  const id = 'c'.repeat(32);
+  await call('/create', 1, { id, player: players[0] });
+  values.set('settings:1', { breakTrump: true });
+  values.set('score:1', { player: players[0], wins: 2, games: 3 });
+  const response = await call('/clear', 1);
+  expect(response.status).toBe(200);
+  expect(values.size).toBe(0);
+  expect((await call('/home', 1)).body.resumeId).toBeNull();
 });

@@ -6,7 +6,7 @@ export function higherBids(previous: Bid | null) { return allBids.filter(bid => 
 export function lowestBid(previous: Bid | null) { return higherBids(previous)[0] ?? null; }
 export function isHigherBid(bid: Bid, previous: Bid | null) { return allBids.some(item => item.level === bid.level && item.suit === bid.suit) && (!previous || bidValue(bid) > bidValue(previous)); }
 export interface Auction { highest: Bid | null; bidder: number | null; turn: number; passes: number; complete: boolean; allPassed: boolean }
-export function newAuction(dealer: number): Auction { return { highest: null, bidder: null, turn: dealer, passes: 0, complete: false, allPassed: false }; }
+export function newAuction(dealer: number): Auction { return { highest: null, bidder: null, turn: (dealer + 1) % 4, passes: 0, complete: false, allPassed: false }; }
 export function auctionCall(auction: Auction, seat: number, bid: Bid | null): Auction {
   if (auction.complete || auction.allPassed || seat !== auction.turn || (bid && !isHigherBid(bid, auction.highest))) return auction;
   const passes = bid ? 0 : auction.passes + 1;

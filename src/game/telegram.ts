@@ -10,7 +10,7 @@ declare global { interface Window { Telegram?: { WebApp?: TelegramWebApp } } }
 
 export interface LiveContext {
   token: string;
-  user: { id: number; first_name: string; username?: string; photo_url?: string };
+  user: { id: number; username?: string; photo_url?: string };
   groupToken: string;
   startGameId: string | null;
   resumeId: string | null;

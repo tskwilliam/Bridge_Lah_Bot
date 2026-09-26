@@ -1,17 +1,12 @@
 export interface TelegramUser {
   id: number;
-  first_name: string;
-  last_name?: string;
   username?: string;
   photo_url?: string;
 }
 
 export interface VerifiedLaunch {
   user: TelegramUser;
-  authDate: number;
   startParam?: string;
-  chatInstance?: string;
-  chatType?: string;
 }
 
 export interface GameSession {
@@ -61,14 +56,17 @@ export async function verifyInitData(raw: string, botToken: string, now = Date.n
   if (age < -60 || age > 24 * 60 * 60) return null;
   const userText = params.get('user');
   if (!userText) return null;
-  let user: TelegramUser;
-  try { user = JSON.parse(userText) as TelegramUser; } catch { return null; }
-  if (!user || typeof user !== 'object' || !Number.isSafeInteger(user.id) || user.id <= 0 || typeof user.first_name !== 'string') return null;
+  let rawUser: TelegramUser & { first_name?: unknown };
+  try { rawUser = JSON.parse(userText) as typeof rawUser; } catch { return null; }
+  if (!rawUser || typeof rawUser !== 'object' || !Number.isSafeInteger(rawUser.id) || rawUser.id <= 0 || typeof rawUser.first_name !== 'string') return null;
+  if (rawUser.username !== undefined && typeof rawUser.username !== 'string') return null;
+  if (rawUser.photo_url !== undefined && typeof rawUser.photo_url !== 'string') return null;
   const check = keys.filter(key => key !== 'hash').sort().map(key => `${key}=${params.get(key)}`).join('\n');
   const secret = await hmac(encoder.encode('WebAppData'), botToken);
   const expected = hex(await hmac(secret, check));
   if (!sameHash(expected, suppliedHash.toLowerCase())) return null;
-  return { user, authDate, startParam: params.get('start_param') ?? undefined, chatInstance: params.get('chat_instance') ?? undefined, chatType: params.get('chat_type') ?? undefined };
+  const user: TelegramUser = { id: rawUser.id, username: rawUser.username, photo_url: rawUser.photo_url };
+  return { user, startParam: params.get('start_param') ?? undefined };
 }
 
 /** An opaque group link token that can be verified without storing a chat mapping. */
