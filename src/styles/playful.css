@@ -244,3 +244,82 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
   .home-play { padding-bottom: 12px; }
   .friendly-cards { height: 220px; margin: -2px 0 9px; transform: scale(.88); }
 }
+
+/* Use the home Rules button as the bottom anchor for game actions and hands. */
+.simple-app { --layout-half-height: 50dvh; --layout-height: 100dvh; --action-bottom-gap: calc(var(--layout-half-height) - 303px); }
+.simple-app.simple-embedded { --layout-half-height: var(--preview-half-height); --layout-height: var(--preview-height); --action-bottom-gap: calc(var(--layout-half-height) - 303px); }
+.simple-home .home-play { padding-bottom: 42px; }
+.simple-home .friendly-cards { translate: 0 -12px; }
+.simple-home .home-play h2 { font-size: 34px; }
+.leaderboard-page .info-header { margin-bottom: 4px; }
+.leaderboard-page .leader-views { margin: 10px 0 8px; }
+.leaderboard-page .wins-list { margin: 10px 0; }
+.rules-page { height: var(--layout-height); }
+.rules-page .slide-actions { margin-top: auto; margin-bottom: max(0px, calc(var(--action-bottom-gap) - 28px)); }
+
+.simple-app.on-game .minimal-table { height: var(--layout-height); padding-top: calc(20px + env(safe-area-inset-top)); padding-bottom: 0; }
+.simple-app.on-game .circle-stage { width: min(100%, calc(var(--layout-half-height) - 50px)); margin-top: 4px; }
+.simple-app.on-game .play-orbit, .simple-app.on-game .turn-track { inset: 12%; }
+.simple-app.on-game .table-bottom,
+.simple-app.on-game .minimal-table[data-phase=waiting] .table-bottom,
+.simple-app.on-game .minimal-table[data-phase=ended] .table-bottom,
+.simple-app.on-game .minimal-table[data-phase=bidding] .table-bottom,
+.simple-app.on-game .minimal-table[data-phase=partner] .table-bottom,
+.simple-app.on-game .minimal-table[data-phase=playing] .table-bottom { position: relative; flex: 1 1 auto; min-height: 0; justify-content: flex-end; gap: 8px; padding: 0 0 var(--action-bottom-gap); }
+.simple-app.on-game .minimal-table[data-phase=bidding] .table-bottom,
+.simple-app.on-game .minimal-table[data-phase=partner] .table-bottom { gap: 0; padding-bottom: calc(var(--action-bottom-gap) - 30px); }
+.simple-app.on-game .minimal-table[data-phase=bidding] .minimal-hand,
+.simple-app.on-game .minimal-table[data-phase=partner] .minimal-hand { margin-block: auto; }
+.simple-app.on-game .minimal-table[data-phase=playing] .table-bottom { padding-bottom: calc(var(--action-bottom-gap) - 20px); }
+.simple-app.on-game .round-scoreboard { flex: none; height: 32px; animation: scoreboard-arrives .25s ease-out .5s both; }
+.simple-app.on-game .minimal-table[data-phase=playing] .minimal-hand { animation: hand-shifts-down .5s ease-out both; }
+@keyframes hand-shifts-down { from { transform: translateY(-20px); } to { transform: translateY(0); } }
+@keyframes scoreboard-arrives { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .simple-app.on-game .round-scoreboard, .simple-app.on-game .minimal-table[data-phase=playing] .minimal-hand { animation: none; } }
+.simple-app.on-game .lobby-actions { grid-template-rows: 92px 56px; gap: 8px; }
+.simple-app.on-game .round-settings { grid-template-rows: 42px 42px; gap: 8px; }
+.simple-app.on-game .trump-toggle { height: 42px; min-height: 42px; font-size: 16px; line-height: 1; }
+.simple-app.on-game .reshuffle-setting .trump-toggle { padding: 2px 6px; }
+.simple-app.on-game .reshuffle-setting select { height: 42px; min-height: 42px; padding: 0 2px; }
+.simple-app.on-game .round-control-slot { height: 70px; }
+.simple-app.on-game .round-control-slot > .inline-controls { padding: 12px; }
+.simple-app.on-game .round-control-slot .auction-row { display: grid; grid-template-columns: 58px minmax(0, 1fr) 68px; align-items: center; gap: 8px; }
+.simple-app.on-game .round-control-slot .partner-row { grid-template-columns: minmax(0, 1fr) 86px; }
+.simple-app.on-game .round-control-slot .partner-pickers { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; min-width: 0; }
+.simple-app.on-game .round-control-slot .partner-pickers label { min-width: 0; }
+.simple-app.on-game .round-control-slot .auction-max { grid-template-columns: minmax(0, 1fr) 68px; }
+.simple-app.on-game .round-control-slot .auction-max p { font-size: 14px; }
+.simple-app.on-game .round-control-slot .partner-pickers select { height: 42px; min-height: 42px; margin: 0; padding: 4px 8px; }
+.simple-app.on-game .round-control-slot .inline-controls .btn { height: 42px; min-height: 42px; min-width: 0; padding: 6px 4px; }
+.simple-app.on-game .minimal-hand .hand-slot { top: 14px; }
+.simple-app.on-game .hand-area .shuffle-notice { inset: 14px 0 auto; }
+.simple-app.on-game .reshuffle-row { position: absolute; right: 0; bottom: calc(var(--action-bottom-gap) + 232px); z-index: 6; height: 42px; display: flex; justify-content: flex-end; }
+.simple-app.on-game .reshuffle-row .reshuffle-button { height: 42px; min-height: 42px; margin: 0; }
+.simple-app.on-game .table-play .card-trick { width: 64px; height: 88px; }
+.simple-app.on-game .table-play.from-bottom { --from-x: 0px; --from-y: 53px; }
+.simple-app.on-game .table-play.from-left { --from-x: -64px; --from-y: 0px; }
+.simple-app.on-game .table-play.from-top { --from-x: 0px; --from-y: -35px; }
+.simple-app.on-game .table-play.from-right { --from-x: 64px; --from-y: 0px; }
+.simple-app.on-game .circle-seat.position-bottom .crown { top: -4px; }
+.simple-app.on-game .circle-seat.position-left .kick-player { right: calc(50% + 20px); }
+.simple-app.on-game .circle-seat.position-right .kick-player { left: calc(50% + 20px); }
+.simple-app.on-game .circle-seat.position-top .kick-player { left: calc(50% - 51px); top: -11px; }
+.simple-app.on-game .kick-player svg { opacity: .7; }
+@media (max-height: 790px) {
+  .simple-app.on-game .circle-seat.position-top { top: 8%; }
+  .simple-app.on-game .circle-seat.position-left { left: 10%; }
+  .simple-app.on-game .circle-seat.position-right { left: 90%; }
+  .simple-app.on-game .table-play .card-trick { width: 54px; height: 72px; }
+  .simple-app.on-game .table-play.from-bottom { --from-y: 39.5px; }
+  .simple-app.on-game .table-play.from-left { --from-x: -54px; }
+  .simple-app.on-game .table-play.from-top { --from-y: -33.5px; }
+  .simple-app.on-game .table-play.from-right { --from-x: 54px; }
+}
+@media (max-height: 760px) {
+  .simple-app { --action-bottom-gap: calc(50dvh - 281px); }
+  .simple-home .home-play { padding-bottom: 30px; }
+  .rules-page .info-header { margin-bottom: 12px; }
+  .rules-page .rule-graphic { height: 190px; margin: 8px 0 16px; }
+  .rules-page .rule-copy { min-height: 175px; }
+  .rules-page .slide-dots { margin: 6px 0; }
+}
