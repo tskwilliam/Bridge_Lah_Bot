@@ -1,0 +1,16 @@
+@font-face { font-family: 'Bricolage Grotesque'; src: url('/fonts/BricolageGrotesque.ttf') format('truetype'); font-weight: 200 800; font-style: normal; font-display: swap; }
+:root {
+  --font: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
+  font-family: var(--font); color: var(--text); background: var(--canvas); font-synthesis: none;
+  --canvas: #e8ebdf; --app-bg: #fffaf0; --surface: #ffffff; --table: #dcd5ef;
+  --table-light: #eee9f8; --table-line: #b3a4cf; --table-text: #20211e; --table-muted: #5b536d;
+  --text: #20211e; --text-secondary: #616359; --border: #242520; --ink: #171815;
+  --accent: #a9c88f; --accent-soft: #e6efdc; --success: #4c7645; --warning: #947036; --danger: #ab3d3e;
+  --gold: #f9dc8a; --gold-soft: #fff0c0; --pink: #ffd1d2; --rose: #f46386; --orange: #f1a24b;
+  --spades: #222222; --hearts: #ab3d3e; --diamonds: #f1a24b; --clubs: #bfdba8;
+  --card-paper: #ffffff; --card-border: #20211e; --card-back: #658f63; --card-back-line: #a9c88f;
+  --avatar-you: #94d9d5; --avatar-marcus: #f7bf82; --avatar-rachel: #ffd1d2; --avatar-wei: #d6e7c8;
+  --shadow: 3px 5px 0 var(--ink); --card-shadow: 1px 3px 0 rgb(23 24 21 / 22%);
+  --setting-off: #e1e2dd; --setting-on: #bfdba8;
+  --overlay: rgb(23 24 21 / 45%); --ring: #ae4b62;
+}
