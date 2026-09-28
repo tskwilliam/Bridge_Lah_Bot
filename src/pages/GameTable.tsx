@@ -19,7 +19,7 @@ import '../styles/table.css';
 
 // Fixed 420px canvas bounds: the circle and four seats, with room for all three
 // kick hit areas and a short bottom label. Text and phase content never resize it.
-const tableLayout = { centerX: 210, centerY: 195, radiusX: 187, radiusY: 183 };
+const tableLayout = { centerX: 210, centerY: 195, radiusX: 160, radiusY: 183 };
 // Landscape reserves the bottom trick pile even before play; usernames do not
 // determine the table bounds or move the table between phases.
 const landscapeVerticalBounds = { top: 8, bottom: 404 };
@@ -63,7 +63,7 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
         const bottomMargin = 50;
         const handTop = height - bottomMargin - handHeight;
         const scoreTop = handTop - 52;
-        // The bidding hand is the lowest shared boundary for every game phase.
+        // The hand and score are the shared lower limit in every phase.
         const lowerBoundary = handTop - 90;
         groupSize = Math.max(32, Math.min((width / 2 - 20) * 420 / tableLayout.radiusX, ((lowerBoundary - 64) / 2 - 20) * 420 / tableLayout.radiusY));
         frame.style.setProperty('--group-left', `${width / 2 - tableLayout.centerX * groupSize / 420}px`);
