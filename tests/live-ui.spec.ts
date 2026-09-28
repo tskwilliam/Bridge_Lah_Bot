@@ -7,14 +7,12 @@ const players: SharedPlayer[] = [1, 2, 3, 4].map(number => ({ id: String(number)
 let game = newSharedGame(id, -100123, players[0], { breakTrump: false, reshuffleEnabled: false, reshuffleThreshold: 4 }, 1000);
 for (const player of players.slice(1)) game = applySharedAction(game, player.id, { type: 'join', player }, 1001);
 
-test('Telegram launch shows the shared table with each player at the bottom', async ({ browser }) => {
-  for (const number of [1, 2]) {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    const page = await context.newPage();
+for (const number of [1, 2]) {
+  test(`Telegram launch seats player ${number} at the bottom`, async ({ page }) => {
     await page.route('https://telegram.org/js/telegram-web-app.js?63', route => route.fulfill({ contentType: 'application/javascript', body: 'window.Telegram={WebApp:{initData:"signed-test-launch",ready(){},expand(){}}};' }));
     await page.route('**/api/context', route => route.fulfill({ json: { token: 'test-session', user: { id: number, first_name: `Live ${number}` }, groupToken: 'test-group', startGameId: id, resumeId: id } }));
     await page.route(`**/api/games/${id}/join`, route => route.fulfill({ json: { state: sharedView(game, String(number)) } }));
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-seat="bottom"]')).toContainText(`@live${number}`);
     await expect(page.getByText('Marcus', { exact: true })).toHaveCount(0);
     await expect(page.locator('.circle-seat')).toHaveCount(4);
@@ -26,9 +24,8 @@ test('Telegram launch shows the shared table with each player at the bottom', as
     const photoBox = (await photo.boundingBox())!;
     expect(photoBox.width).toBe(avatarBox.width);
     expect(photoBox.height).toBe(avatarBox.height);
-    await context.close();
-  }
-});
+  });
+}
 
 test('Telegram connection shows only the four-suit slideshow', async ({ page }) => {
   await page.route('https://telegram.org/js/telegram-web-app.js?63', route => route.fulfill({ contentType: 'application/javascript', body: 'window.Telegram={WebApp:{initData:"signed-test-launch",ready(){},expand(){}}};' }));

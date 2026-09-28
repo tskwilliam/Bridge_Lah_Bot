@@ -39,6 +39,17 @@ function roomCall(env: Env, chatId: number, path: string, body: object) {
   return room(env, chatId).fetch(new Request(`https://room.internal${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 }
 
+// Telegram only guarantees getChatMember for other users when the bot is an admin.
+// A valid signed group launch link still permits regular-member bots to host games.
+async function knownNonMember(env: Env, chatId: number, userId: number) {
+  try {
+    const result = await botCall(env, 'getChatMember', { chat_id: chatId, user_id: userId }) as ChatMemberResponse;
+    return !result.result || ['left', 'kicked'].includes(result.result.status) || (result.result.status === 'restricted' && result.result.is_member === false);
+  } catch {
+    return false;
+  }
+}
+
 async function handleWebhook(request: Request, env: Env) {
   if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TELEGRAM_WEBHOOK_SECRET) return json({ error: 'Unauthorized' }, 401);
   const update = await request.json() as BotUpdate;
@@ -62,8 +73,7 @@ async function handleContext(request: Request, env: Env) {
   if (!launch) return json({ error: 'Invalid Telegram launch' }, 401);
   const context = await parseStartParam(launch.startParam ?? '', env.LINK_SECRET);
   if (!context) return json({ error: 'Open the app from your group’s Bridge Lah! link' }, 400);
-  const result = await botCall(env, 'getChatMember', { chat_id: context.chatId, user_id: launch.user.id }) as ChatMemberResponse;
-  if (!result.result || ['left', 'kicked'].includes(result.result.status) || (result.result.status === 'restricted' && result.result.is_member === false)) return json({ error: 'Not a group member' }, 403);
+  if (await knownNonMember(env, context.chatId, launch.user.id)) return json({ error: 'Not a group member' }, 403);
   const token = await issueSession(launch.user, context.chatId, env.LINK_SECRET);
   const homeResponse = await roomCall(env, context.chatId, '/home', { session: { user: launch.user, chatId: context.chatId } });
   const home = await homeResponse.json() as { resumeId?: string };
@@ -84,8 +94,7 @@ async function handleApi(request: Request, env: Env, url: URL) {
   if (url.pathname === '/api/home' && request.method === 'GET') return roomCall(env, session.chatId, '/home', { session });
   if (url.pathname === '/api/leaderboard' && request.method === 'GET') return roomCall(env, session.chatId, '/leaderboard', { session });
   if (url.pathname === '/api/games' && request.method === 'POST') {
-    const membership = await botCall(env, 'getChatMember', { chat_id: session.chatId, user_id: session.user.id }) as ChatMemberResponse;
-    if (!membership.result || ['left', 'kicked'].includes(membership.result.status) || (membership.result.status === 'restricted' && membership.result.is_member === false)) return json({ error: 'Not a group member' }, 403);
+    if (await knownNonMember(env, session.chatId, session.user.id)) return json({ error: 'Not a group member' }, 403);
     const id = crypto.randomUUID().replace(/-/g, '');
     const response = await roomCall(env, session.chatId, '/create', { session, id, player: playerFrom(session.user) });
     if (!response.ok) return response;
@@ -119,9 +128,9 @@ export default {
       if (url.pathname.startsWith('/api/')) return handleApi(request, env, url);
       if (url.pathname.startsWith('/telegram/')) return json({ error: 'Not found' }, 404);
       const asset = await env.ASSETS.fetch(request);
-      if (asset.ok && /^\/(cards|card-previews|icons)\/.+\.png$/i.test(url.pathname)) {
+      if (asset.ok && /^\/(cards|card-previews|card-fast|card-table|icons)\/.+\.(png|webp)$/i.test(url.pathname)) {
         const headers = new Headers(asset.headers);
-        headers.set('Cache-Control', 'public, max-age=3600');
+        headers.set('Cache-Control', 'public, max-age=31536000, immutable');
         return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
       }
       return asset;

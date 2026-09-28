@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { sortCards } from '../game/bidding';
 import { joinLiveGame, liveAction, liveGame, type LiveContext } from '../game/telegram';
 import type { SharedAction, SharedGameView } from '../game/shared';
@@ -11,6 +11,8 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
   const [view, setView] = useState<SharedGameView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const sending = useRef(false);
 
   useEffect(() => {
     if (!context) return;
@@ -47,16 +49,25 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
   }, [context?.token, context?.groupToken, gameId]);
 
   async function send(action: SharedAction) {
-    if (!context) return;
+    if (!context || sending.current) return;
+    sending.current = true;
+    setPending(true);
     try {
       const result = await liveAction(context, gameId, action);
       if (result.state) setView(current => !current || result.state!.revision >= current.revision ? result.state : current);
       else setView(null);
       setError('');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Move could not be saved.'); }
+    } catch (reason) {
+      try {
+        const latest = await liveGame(context, gameId);
+        setView(latest.state);
+        if (view && latest.state.revision > view.revision) { setError(''); return; }
+      } catch { /* Keep the last known table. */ }
+      setError(reason instanceof Error ? reason.message : 'Move could not be saved.');
+    } finally { sending.current = false; setPending(false); }
   }
 
-  if (!view || !context) return { table: null as Table | null, error };
+  if (!view || !context) return { table: null as Table | null, error, pending };
   const canonical = (visual: number) => (view.seatIndex + visual) % 4;
   const memberList = view.seats.filter((player): player is NonNullable<typeof player> => player !== null).map(player => ({ ...player, wins: view.wins[player.id] ?? 0 }));
   const table: Table = {
@@ -64,7 +75,7 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     members: memberList,
     viewerId: String(context.user.id), wins: view.wins, games: view.games, isDealer: view.isDealer,
     phase: view.phase, seats: view.seats.map(player => player?.id ?? null), dealerId: view.dealerId,
-    round: view.round, bid: view.bid, declarer: view.declarer, partner: view.partner, partnerSeat: view.partnerSeat,
+    round: view.round, bid: view.bid, declarer: view.declarer, partner: view.partner, partnerSeat: view.partnerSeat, announcementUntil: view.announcementUntil,
     declarerHand: view.declarerHand, cards: sortCards(view.cards), selected, active: view.active,
     plays: view.plays, counts: view.counts, trickStatus: view.trickStatus, winner: view.winner,
     bids: view.bids, highestBid: view.highestBid, biddingBusy: view.biddingBusy,
@@ -74,9 +85,9 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     callPartner: (card: Card) => { void send({ type: 'partner', card }); },
     placeBid: bid => { void send({ type: 'bid', bid }); },
     tapCard: id => {
-      if (view.phase !== 'playing' || view.active !== 0 || !view.validIds.includes(id)) return;
+      if (sending.current || view.phase !== 'playing' || (view.announcementUntil !== null && Date.now() < view.announcementUntil) || !view.validIds.includes(id)) return;
       if (selected !== id) setSelected(id);
-      else { setSelected(null); void send({ type: 'play', cardId: id }); }
+      else if (view.active === 0) { setSelected(null); void send({ type: 'play', cardId: id }); }
     },
     restart: () => { void send({ type: 'restart' }); },
     start: () => { void send({ type: 'start' }); },
@@ -89,5 +100,5 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     setReshuffleThreshold: threshold => { void send({ type: 'reshuffleSetting', enabled: view.reshuffleEnabled, threshold }); },
     requestReshuffle: () => { void send({ type: 'reshuffle' }); },
   };
-  return { table, error };
+  return { table, error, pending };
 }

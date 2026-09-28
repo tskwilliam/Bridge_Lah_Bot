@@ -18,7 +18,7 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
     const bid: Bid = { level: 3, suit: 'spades' };
     const partner = suggestPartner(hands[0], bid);
     return { version: 3, phase: initialPhase, seats: ['you', 'marcus', 'rachel', 'wei'] as (string | null)[], activePlayers: [viewerId], dealerId: viewerId, round: 1, bid, declarer: 0, partner,
-      partnerSeat: hands.findIndex(h => h.some(c => c.id === partner.id)), hands, selected: null as string | null, playTurn: initialPhase === 'playing' ? 1 : 0,
+      partnerSeat: hands.findIndex(h => h.some(c => c.id === partner.id)), announcementUntil: null as number | null, hands, selected: null as string | null, playTurn: initialPhase === 'playing' ? 1 : 0,
       plays: [] as Play[], counts: initialPhase === 'ended' ? [9, 0, 0, 0] : [0, 0, 0, 0], trickStatus: 'playing' as 'playing' | 'holding' | 'collecting', winner: null as number | null,
       bids: [null, null, null, null] as (Bid | 'Pass' | null)[], auction: newAuction(0), sampleRaiseUsed: false, breakTrump: settings.breakTrump, trumpBroken: false,
       reshuffleEnabled: testReshuffle || settings.reshuffleEnabled, reshuffleThreshold: settings.reshuffleThreshold, testReshuffle: (testReshuffle ? 'initial' : null) as 'initial' | 'after-first' | 'done' | null, testSeat,
@@ -48,7 +48,7 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
     if (own >= 0 && s.activePlayers.includes(viewerId)) sessionStorage.setItem('bridge-resume:' + viewerId, gameId);
   }, [s, gameId, embedded, viewerId, own]);
   function reset(next: typeof s, phase: GamePhase = 'waiting'): typeof s {
-    return { ...next, phase, hands: dealHands(), selected: null, plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, bids: [null, null, null, null], auction: newAuction(Math.max(0, next.seats.indexOf(next.dealerId))), sampleRaiseUsed: false, trumpBroken: false, shuffling: false, shuffleReveal: false, notice: '' };
+    return { ...next, phase, hands: dealHands(), selected: null, plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, announcementUntil: null, bids: [null, null, null, null], auction: newAuction(Math.max(0, next.seats.indexOf(next.dealerId))), sampleRaiseUsed: false, trumpBroken: false, shuffling: false, shuffleReveal: false, notice: '' };
   }
   function submitBid(value: Bid | null, seat: number) {
     set(prev => {
@@ -70,18 +70,18 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
   function callPartner(card: Card) {
     set(prev => {
       if (prev.phase !== 'partner' || prev.hands[prev.declarer].some(c => c.id === card.id)) return prev;
-      return { ...prev, partner: card, partnerSeat: prev.hands.findIndex(h => h.some(c => c.id === card.id)), playTurn: (prev.declarer + 1) % 4, phase: 'playing' };
+      return { ...prev, partner: card, partnerSeat: prev.hands.findIndex(h => h.some(c => c.id === card.id)), announcementUntil: Date.now() + 3000, playTurn: (prev.declarer + 1) % 4, phase: 'playing' };
     });
   }
   useEffect(() => { if (s.phase !== 'partner' || s.declarer === own || own < 0) return; const timer = window.setTimeout(() => callPartner(s.partner), 1200); return () => clearTimeout(timer); }, [s.phase, s.declarer, own, s.partner]);
   function playCard(seat: number, card: Card) {
     set(prev => {
-      if (prev.phase !== 'playing' || seat !== prev.playTurn || prev.trickStatus !== 'playing' || !legalCards(prev.hands[seat], prev.plays, { trump: prev.bid.suit, breakTrump: prev.breakTrump, trumpBroken: prev.trumpBroken }).some(c => c.id === card.id)) return prev;
+      if (prev.phase !== 'playing' || seat !== prev.playTurn || prev.trickStatus !== 'playing' || (prev.announcementUntil !== null && Date.now() < prev.announcementUntil) || !legalCards(prev.hands[seat], prev.plays, { trump: prev.bid.suit, breakTrump: prev.breakTrump, trumpBroken: prev.trumpBroken }).some(c => c.id === card.id)) return prev;
       const plays = [...prev.plays, { seat, card }];
-      return { ...prev, hands: prev.hands.map((h, i) => i === seat ? h.filter(c => c.id !== card.id) : h), plays, selected: null, trickStatus: plays.length === 4 ? 'holding' : 'playing', playTurn: plays.length === 4 ? seat : (seat + 1) % 4 };
+      return { ...prev, hands: prev.hands.map((h, i) => i === seat ? h.filter(c => c.id !== card.id) : h), plays, selected: seat === own ? null : prev.selected, trickStatus: plays.length === 4 ? 'holding' : 'playing', playTurn: plays.length === 4 ? seat : (seat + 1) % 4 };
     });
   }
-  useEffect(() => { if (s.phase !== 'playing' || s.trickStatus !== 'playing' || active === own || own < 0) return; const timer = window.setTimeout(() => { const card = legalCards(s.hands[active], s.plays, trumpRule)[0]; if (card) playCard(active, card); }, 900); return () => clearTimeout(timer); }, [s.phase, active, own, s.plays, s.hands, s.trickStatus]);
+  useEffect(() => { if (s.phase !== 'playing' || s.trickStatus !== 'playing' || active === own || own < 0) return; const timer = window.setTimeout(() => { const card = legalCards(s.hands[active], s.plays, trumpRule)[0]; if (card) playCard(active, card); }, Math.max(900, (s.announcementUntil ?? 0) - Date.now() + 900)); return () => clearTimeout(timer); }, [s.phase, active, own, s.plays, s.hands, s.trickStatus, s.announcementUntil]);
   useEffect(() => {
     if (s.phase !== 'playing' || s.plays.length !== 4 || own < 0) return;
     const timer = window.setTimeout(() => set(prev => {
@@ -121,9 +121,9 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
     set(next);
   }
   return {
-    members, viewerId, wins: s.wins, games: s.games, isDealer: dealer, phase: s.phase, seats: rotate(s.seats), dealerId: s.dealerId, round: s.round, bid: s.bid, declarer: visual(s.declarer), partner: s.partner, partnerSeat: visual(s.partnerSeat), callPartner,
+    members, viewerId, wins: s.wins, games: s.games, isDealer: dealer, phase: s.phase, seats: rotate(s.seats), dealerId: s.dealerId, round: s.round, bid: s.bid, declarer: visual(s.declarer), partner: s.partner, partnerSeat: visual(s.partnerSeat), announcementUntil: s.announcementUntil, callPartner,
     declarerHand: s.hands[s.declarer], cards: own < 0 ? [] : sortCards(s.hands[own]), selected: s.selected, active: visual(active), plays: s.plays.map(p => ({ ...p, seat: visual(p.seat) })), counts: rotate(s.counts), trickStatus: s.trickStatus, winner: s.winner === null ? null : visual(s.winner), bids: rotate(s.bids), highestBid: s.auction.highest, biddingBusy: active !== own || s.shuffling,
-    placeBid: (value: Bid | null) => { if (own >= 0) submitBid(value, own); }, tapCard: (id: string) => { if (s.phase !== 'playing' || active !== own || s.trickStatus !== 'playing' || !validIds.includes(id)) return; if (s.selected !== id) set(prev => ({ ...prev, selected: id })); else { const card = s.hands[own].find(c => c.id === id); if (card) playCard(own, card); } },
+    placeBid: (value: Bid | null) => { if (own >= 0) submitBid(value, own); }, tapCard: (id: string) => { if (s.phase !== 'playing' || s.trickStatus !== 'playing' || (s.announcementUntil !== null && Date.now() < s.announcementUntil) || !validIds.includes(id)) return; if (s.selected !== id) set(prev => ({ ...prev, selected: id })); else if (active === own) { const card = s.hands[own].find(c => c.id === id); if (card) playCard(own, card); } },
     restart: () => { if (s.phase === 'ended') set(prev => reset({ ...prev, dealerId: prev.seats[(prev.seats.indexOf(prev.dealerId) + 1) % 4]!, round: prev.round + 1 })); },
     start: () => { if (ready && s.phase === 'waiting' && own >= 0) { if (!embedded) rememberPlayerSettings(viewerId, s); set(prev => {
       const next = reset(prev, 'bidding');

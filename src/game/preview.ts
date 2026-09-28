@@ -3,9 +3,9 @@ import type { Member, PlayerPosition } from '../types/game';
 
 export const members: Member[] = [
   { id: 'you', username: '@you', initials: 'Y', wins: 12 },
-  { id: 'marcus', username: '@marcus', initials: 'M', wins: 8 },
-  { id: 'rachel', username: '@rachel', initials: 'R', wins: 15 },
-  { id: 'wei', username: '@weijie', initials: 'W', wins: 6 },
+  { id: 'marcus', username: '@hinakrapong', initials: 'M', wins: 8 },
+  { id: 'rachel', username: '@angieavitra', initials: 'R', wins: 15 },
+  { id: 'wei', username: '@lamweixuan', initials: 'W', wins: 6 },
 ];
 export const positions: PlayerPosition[] = ['bottom', 'left', 'top', 'right'];
 // Fixed animation fixtures, not AI, turn rules, or a scoring engine.

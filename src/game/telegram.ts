@@ -20,20 +20,34 @@ export interface LeaderboardRecord { player: SharedPlayer; wins: number; games: 
 export function inTelegram() { return Boolean(window.Telegram?.WebApp?.initData); }
 
 async function unpack<T>(response: Response): Promise<T> {
-  const data = await response.json() as T & { error?: string };
+  const data = await response.json().catch(() => ({})) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? `Request failed (${response.status})`);
   return data;
+}
+
+async function request(path: string, init: RequestInit, retry = false): Promise<Response> {
+  try {
+    const response = await fetch(path, init);
+    if (!retry || response.status < 500) return response;
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return fetch(path, init);
+  }
+  catch (error) {
+    if (!retry) throw error;
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return fetch(path, init);
+  }
 }
 
 export async function connectTelegram(): Promise<LiveContext> {
   const webApp = window.Telegram?.WebApp;
   if (!webApp?.initData) throw new Error('Open Bridge Lah! inside Telegram.');
   webApp.ready(); webApp.expand();
-  return unpack<LiveContext>(await fetch('/api/context', { headers: { Authorization: `tma ${webApp.initData}` }, cache: 'no-store' }));
+  return unpack<LiveContext>(await request('/api/context', { headers: { Authorization: `tma ${webApp.initData}` }, cache: 'no-store' }, true));
 }
 
 export async function liveRequest<T>(context: LiveContext, path: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<T> {
-  return unpack<T>(await fetch(path, { method, headers: { Authorization: `Bearer ${context.token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' }));
+  return unpack<T>(await request(path, { method, headers: { Authorization: `Bearer ${context.token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' }, method === 'GET' || path.endsWith('/join')));
 }
 
 export const liveGame = (context: LiveContext, id: string) => liveRequest<{ state: SharedGameView }>(context, `/api/games/${id}`);

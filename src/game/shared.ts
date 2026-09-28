@@ -21,6 +21,7 @@ export interface SharedGame {
   declarer: number;
   partner: Card;
   partnerSeat: number;
+  announcementUntil: number | null;
   playTurn: number;
   plays: Play[];
   counts: number[];
@@ -62,7 +63,7 @@ export function newSharedGame(id: string, groupId: number, first: SharedPlayer, 
   return {
     version: 1, revision: 0, id, groupId, phase: 'waiting', seats: [first, null, null, null], dealerId: first.id,
     round: 1, hands: emptyHands(), auction: newAuction(0), bids: [null, null, null, null],
-    bid: defaultBid, declarer: 0, partner: defaultPartner, partnerSeat: 1, playTurn: 0,
+    bid: defaultBid, declarer: 0, partner: defaultPartner, partnerSeat: 1, announcementUntil: null, playTurn: 0,
     plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, dueAt: null,
     breakTrump: settings.breakTrump, trumpBroken: false, reshuffleEnabled: settings.reshuffleEnabled,
     reshuffleThreshold: settings.reshuffleThreshold, shuffleStage: null, notice: '',
@@ -71,7 +72,7 @@ export function newSharedGame(id: string, groupId: number, first: SharedPlayer, 
 }
 
 function lobby(game: SharedGame): SharedGame {
-  return { ...game, phase: 'waiting', hands: emptyHands(), auction: newAuction(Math.max(0, game.seats.findIndex(player => player?.id === game.dealerId))), bids: [null, null, null, null], plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, dueAt: null, trumpBroken: false, shuffleStage: null };
+  return { ...game, phase: 'waiting', hands: emptyHands(), auction: newAuction(Math.max(0, game.seats.findIndex(player => player?.id === game.dealerId))), bids: [null, null, null, null], plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, dueAt: null, announcementUntil: null, trumpBroken: false, shuffleStage: null };
 }
 
 function playerSeat(game: SharedGame, userId: string) { return game.seats.findIndex(player => player?.id === userId); }
@@ -160,10 +161,10 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
     if (!card || !ranks.includes(card.rank) || !suits.includes(card.suit) || card.id !== `${card.rank}-${card.suit}` || game.hands[own].some(item => item.id === card.id)) invalid('Choose a card outside your hand.');
     const partnerSeat = game.hands.findIndex(hand => hand.some(item => item.id === card.id));
     if (partnerSeat < 0) invalid('Partner card not found.');
-    return { ...game, partner: card, partnerSeat, playTurn: (own + 1) % 4, phase: 'playing', updatedAt: now };
+    return { ...game, partner: card, partnerSeat, announcementUntil: now + 3000, playTurn: (own + 1) % 4, phase: 'playing', updatedAt: now };
   }
   if (action.type === 'play') {
-    if (game.phase !== 'playing' || game.trickStatus !== 'playing' || game.playTurn !== own) invalid('It is not your turn to play.');
+    if (game.phase !== 'playing' || game.trickStatus !== 'playing' || game.playTurn !== own || (game.announcementUntil !== null && now < game.announcementUntil)) invalid('It is not your turn to play.');
     const card = game.hands[own].find(item => item.id === action.cardId);
     if (!card) throw new GameActionError('That card is not in your hand.');
     if (!legalCards(game.hands[own], game.plays, { trump: game.bid.suit, breakTrump: game.breakTrump, trumpBroken: game.trumpBroken }).some(item => item.id === action.cardId)) invalid('That card cannot be played.');
@@ -186,10 +187,10 @@ export function sharedView(game: SharedGame, userId: string) {
   const rotate = <T,>(items: T[]) => [0, 1, 2, 3].map(index => items[seat(index)]);
   const active = game.phase === 'bidding' ? game.auction.turn : game.playTurn;
   const cards = game.hands[own];
-  const validIds = game.phase === 'playing' && game.trickStatus === 'playing' && active === own ? legalCards(cards, game.plays, { trump: game.bid.suit, breakTrump: game.breakTrump, trumpBroken: game.trumpBroken }).map(card => card.id) : [];
+  const validIds = game.phase === 'playing' && game.trickStatus === 'playing' ? legalCards(cards, game.plays, { trump: game.bid.suit, breakTrump: game.breakTrump, trumpBroken: game.trumpBroken }).map(card => card.id) : [];
   return {
     id: game.id, version: game.version, revision: game.revision, phase: game.phase, seatIndex: own, seats: rotate(game.seats), dealerId: game.dealerId,
-    round: game.round, bid: game.bid, declarer: relativeSeat(game.declarer, own), partner: game.partner,
+    round: game.round, bid: game.bid, declarer: relativeSeat(game.declarer, own), partner: game.partner, announcementUntil: game.announcementUntil,
     partnerSeat: relativeSeat(game.partnerSeat, own), cards, active: relativeSeat(active, own),
     plays: game.plays.map(play => ({ ...play, seat: relativeSeat(play.seat, own) })), counts: rotate(game.counts),
     trickStatus: game.trickStatus, winner: game.winner === null ? null : relativeSeat(game.winner, own),

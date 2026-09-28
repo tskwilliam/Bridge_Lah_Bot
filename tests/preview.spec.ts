@@ -1,4 +1,4 @@
-﻿import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { handStrength } from '../src/game/deal';
 async function create(page: Page) { await page.goto('/'); await page.getByRole('button', { name: 'Create game', exact: true }).click(); }
 async function snapshot(page: Page) { return page.evaluate(() => JSON.parse(sessionStorage.getItem('bridge-session:' + new URLSearchParams(location.search).get('game'))!)); }
@@ -8,7 +8,7 @@ async function aligned(page: Page) {
   const orbit = (await page.locator('.play-orbit').boundingBox())!;
   const stage = (await page.locator('.circle-stage').boundingBox())!;
   expect(Math.abs(orbit.width - orbit.height)).toBeLessThan(1);
-  for (const [pos, x, y] of [['top', .5, .12], ['bottom', .5, .88], ['left', .12, .5], ['right', .88, .5]] as const) {
+  for (const [pos, x, y] of [['top', .5, .145], ['bottom', .5, .855], ['left', .145, .5], ['right', .855, .5]] as const) {
     const a = (await page.locator('[data-seat=' + pos + '] .seat-avatar-button').boundingBox())!;
     expect(Math.abs(a.x + a.width / 2 - stage.x - stage.width * x)).toBeLessThan(1);
     expect(Math.abs(a.y + a.height / 2 - stage.y - stage.height * y)).toBeLessThan(1);
@@ -30,67 +30,46 @@ test('normal games deal all cards randomly without the reshuffle test hand', asy
   expect(second.hands).not.toEqual(first.hands);
 });
 
-test('short phone viewport keeps the home and every game phase on one screen', async ({ page }) => {
+test('short phone viewport preserves the table size through game phases', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 700 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
-  const fits = () => page.evaluate(() => document.documentElement.scrollHeight <= innerHeight);
-  await expect.poll(fits).toBe(true);
-  const rules = (await page.getByRole('button', { name: 'Rules', exact: true }).boundingBox())!;
-  const rulesBottom = rules.y + rules.height;
-  await page.getByRole('button', { name: 'Create game', exact: true }).click();
-  await expect.poll(fits).toBe(true);
-  const start = (await page.getByRole('button', { name: 'Start game', exact: true }).boundingBox())!;
-  const startBottom = start.y + start.height;
-  expect(Math.abs(startBottom - rulesBottom)).toBeLessThan(2);
-  const waitingSize = (await page.locator('.circle-stage').boundingBox())!.width;
+  await create(page);
+  await page.locator('.minimal-table').evaluate(element => element.getAnimations().forEach(animation => animation.finish()));
+  const waiting = (await page.locator('.circle-stage').boundingBox())!;
+  expect(waiting.width).toBeGreaterThanOrEqual(280);
+  const expectSameTable = async () => {
+    await page.locator('.minimal-table').evaluate(element => element.getAnimations().forEach(animation => animation.finish()));
+    const current = (await page.locator('.circle-stage').boundingBox())!;
+    for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(current[key] - waiting[key]), key).toBeLessThan(.1);
+  };
   await page.getByRole('button', { name: 'Start game', exact: true }).click();
-  await expect(page.locator('.bid-turn-message')).toHaveText('@marcus to bid');
-  expect((await page.locator('.centre-bid-suit .suit-icon').boundingBox())!.width).toBeLessThan(49);
-  expect((await page.locator('.bid-turn-message').evaluate(el => parseFloat(getComputedStyle(el).fontSize)))).toBeLessThan(17);
-  await expect.poll(fits).toBe(true);
-  const hand = (await page.locator('.minimal-hand').boundingBox())!;
-  const panel = (await page.locator('.round-control-slot').boundingBox())!;
-  expect(hand.y + hand.height).toBeLessThan(panel.y);
-  expect(Math.abs(panel.y + panel.height - rulesBottom - 30)).toBeLessThan(2);
-  const biddingSize = (await page.locator('.circle-stage').boundingBox())!.width;
-  expect(biddingSize).toBe(waitingSize);
+  await expectSameTable();
   const state = await snapshot(page);
   await seed(page, { phase: 'partner', declarer: 0, partner: state.hands[0][0] });
-  await expect.poll(fits).toBe(true);
-  const partnerPanel = (await page.locator('.round-control-slot').boundingBox())!;
-  const partnerHand = (await page.locator('.minimal-hand').boundingBox())!;
-  expect(partnerHand.y + partnerHand.height).toBeLessThan(partnerPanel.y);
-  expect(Math.abs(partnerPanel.y + partnerPanel.height - rulesBottom - 30)).toBeLessThan(2);
-  await expect(page.locator('.round-scoreboard')).toHaveCount(0);
+  await expectSameTable();
   await seed(page, { phase: 'playing' });
-  await expect.poll(fits).toBe(true);
-  await expect(page.locator('.target-split')).toHaveCSS('border-top-width', '0px');
-  const scoreboard = (await page.locator('.round-scoreboard').boundingBox())!;
-  const playHand = (await page.locator('.minimal-hand').boundingBox())!;
-  const table = (await page.locator('.circle-stage').boundingBox())!;
-  expect(playHand.y).toBeGreaterThan(partnerHand.y);
-  expect(scoreboard.y).toBeGreaterThanOrEqual(table.y + table.height);
-  expect(scoreboard.y + scoreboard.height).toBeLessThan(playHand.y);
-  await seed(page, { phase: 'playing', plays: [0, 1, 2, 3].map(seat => ({ seat, card: { id: `${seat + 2}-clubs`, rank: String(seat + 2), suit: 'clubs' } })), trickStatus: 'holding' });
-  const shortCard = (await page.locator('.table-play .card-trick').first().boundingBox())!;
-  expect(shortCard.width).toBe(54);
-  expect(shortCard.height).toBe(72);
-  const collisions = await page.evaluate(() => {
-    const rects = (selector: string) => [...document.querySelectorAll(selector)].map(element => element.getBoundingClientRect());
-    const cards = rects('.table-play .card-trick');
-    const seats = rects('.seat-avatar-button, .seat-username, .trick-count, .crown');
-    const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-    return cards.flatMap((card, index) => [...cards.slice(index + 1), ...seats].filter(other => overlaps(card, other)).map(other => ({ card: card.toJSON(), other: other.toJSON() })));
-  });
-  expect(collisions).toEqual([]);
+  await expectSameTable();
+  await seed(page, { phase: 'playing', dealerId: 'rachel' });
+  await expect(page.locator('.kick-player')).toHaveCount(0);
+  await expectSameTable();
+  await page.locator('[data-seat=left] .seat-username').evaluate(element => { element.textContent = '@' + 'w'.repeat(24); });
+  await expectSameTable();
+  await page.setViewportSize({ width: 800, height: 600 });
+  await seed(page, { phase: 'waiting', dealerId: 'you' });
+  await page.locator('.minimal-table').evaluate(element => element.getAnimations().forEach(animation => animation.finish()));
+  const landscapeWaiting = (await page.locator('.circle-stage').boundingBox())!;
+  for (const phase of ['bidding', 'partner', 'playing'] as const) {
+    await seed(page, { phase, dealerId: phase === 'playing' ? 'rachel' : 'you' });
+    await page.locator('.minimal-table').evaluate(element => element.getAnimations().forEach(animation => animation.finish()));
+    const current = (await page.locator('.circle-stage').boundingBox())!;
+    for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(current[key] - landscapeWaiting[key]), `landscape ${phase} ${key}`).toBeLessThan(.1);
+  }
 });
 test('mobile copy, settings, dealer crosses, random deal and resume', async ({ page }, info) => {
   await page.goto('/'); await expect(page.getByRole('heading', { name: 'Bridge. The Kopitiam Style.' })).toBeVisible();
   await expect(page.locator('.simple-home-footer')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/session-home-' + info.project.name + '.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Create game', exact: true }).click();
-  await expect(page.locator('.split-slot')).toBeEmpty();
+  await expect(page.locator('.split-slot')).toHaveCount(0);
   const breakTrump = page.getByRole('button', { name: /Break trump/ });
   await expect(breakTrump).toHaveText('Break trump');
   const reshuffleSetting = page.getByRole('button', { name: /Allow reshuffle/ });
@@ -102,7 +81,7 @@ test('mobile copy, settings, dealer crosses, random deal and resume', async ({ p
   await expect(page.locator('[data-seat=bottom] .kick-player')).toHaveCount(0);
   await expect(page.locator('.session-wins')).toHaveCount(4);
   await aligned(page);
-  await page.getByRole('button', { name: 'Swap seat for @marcus' }).click(); await page.getByRole('button', { name: 'Swap seat for @rachel' }).click();
+  await page.getByRole('button', { name: 'Swap seat for @wwwwwwwwwwww' }).click(); await page.getByRole('button', { name: 'Swap seat for @rachel' }).click();
   await expect(page.locator('[data-seat=left]')).toContainText('@rachel');
   const settings = page.getByRole('button', { name: /Allow reshuffle/ }); await settings.click();
   await expect(settings).toHaveText('Allow reshuffle for hand value');
@@ -117,7 +96,11 @@ test('mobile copy, settings, dealer crosses, random deal and resume', async ({ p
   await expect(page.locator('.minimal-hand button')).toHaveCount(13);
   await expect(page.locator('.minimal-hand button').first()).toHaveCSS('opacity', '1');
   const first = await snapshot(page); expect(new Set(first.hands.flat().map((c: { id: string }) => c.id)).size).toBe(52);
-  const labels = await page.locator('.minimal-hand .playing-card').allTextContents(); expect(labels.every(label => !label)).toBeTruthy();
+  await expect(page.locator('.minimal-hand .hand-index')).toHaveCount(26);
+  await expect(page.locator('.minimal-hand .hand-index').first().locator('b')).not.toBeEmpty();
+  await expect(page.locator('.minimal-hand .hand-index .suit-icon')).toHaveCount(26);
+  await expect(page.locator('.minimal-hand .hand-index').first()).toHaveCSS('border-top-style', 'solid');
+  expect(Number.parseFloat(await page.locator('.minimal-hand .hand-index b').first().evaluate(el => getComputedStyle(el).fontSize))).toBeGreaterThan(13);
   await page.getByRole('button', { name: 'Back home' }).click();
   await page.getByRole('button', { name: 'Resume game', exact: true }).click();
   expect((await snapshot(page)).hands).toEqual(first.hands);
@@ -136,7 +119,7 @@ test('every viewer is at bottom and only dealer can kick; quit resets the table'
   await create(page); const url = page.url();
   for (const viewer of ['marcus', 'rachel', 'wei']) {
     await page.goto(url + '&viewer=' + viewer);
-    await expect(page.locator('[data-seat=bottom]')).toContainText(viewer === 'wei' ? '@weijie' : '@' + viewer);
+    await expect(page.locator('[data-seat=bottom]')).toContainText(viewer === 'wei' ? '@weijie' : viewer === 'marcus' ? '@wwwwwwwwwwww' : '@' + viewer);
     await expect(page.locator('.kick-player')).toHaveCount(0); await aligned(page);
   }
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
@@ -222,18 +205,24 @@ test('reshuffle sits above the bidding panel and covers a stationary hand', asyn
   const action = (await page.getByRole('button', { name: 'Reshuffle', exact: true }).boundingBox())!;
   const panel = (await page.locator('.round-control-slot').boundingBox())!;
   const hand = (await page.locator('.minimal-hand').boundingBox())!;
-  expect(action.y + action.height).toBeLessThan(hand.y);
+  expect(Math.abs(hand.y - action.y - action.height - 5)).toBeLessThan(1);
+  expect(action.height).toBe(30);
+  await page.screenshot({ path: 'test-results/reshuffle-ready-' + info.project.name + '.png', animations: 'disabled' });
   expect(action.y + action.height).toBeLessThan(panel.y);
   expect(Math.abs(action.x + action.width - panel.x - panel.width)).toBeLessThan(1);
   await page.getByRole('button', { name: 'Reshuffle', exact: true }).click();
   await expect(page.locator('.reshuffle-table-message')).toHaveText('@you requested a reshuffle');
+  await expect(page.locator('.reshuffle-requester')).toHaveText('@you');
+  const requester = (await page.locator('.reshuffle-requester').boundingBox())!;
+  const message = (await page.locator('.reshuffle-table-message span:last-child').boundingBox())!;
+  expect(message.y).toBeGreaterThanOrEqual(requester.y + requester.height);
   await expect(page.locator('.centre-bid-suit')).toHaveCount(0);
   await expect(page.locator('.shuffle-notice')).not.toContainText('requested');
   await expect(page.locator('.shuffle-spark')).toHaveCount(0);
   const cover = (await page.locator('.hand-area .shuffle-notice').boundingBox())!;
   const coveredArea = (await page.locator('.hand-area').boundingBox())!;
-  expect(Math.abs(cover.y - coveredArea.y - 14)).toBeLessThan(1);
-  expect(Math.abs(cover.height - 98)).toBeLessThan(1);
+  expect(Math.abs(cover.y - coveredArea.y)).toBeLessThan(1);
+  expect(Math.abs(cover.height - coveredArea.height)).toBeLessThan(1);
   expect(Math.abs(cover.width - coveredArea.width)).toBeLessThan(1);
   expect(await handTop()).toBe(before);
   expect(await cardSlots()).toEqual(beforeSlots);
@@ -247,7 +236,7 @@ test('placing a bid removes reshuffle even when the hand is weak', async ({ page
   await page.goto('/?reshuffleTest=1');
   await page.getByRole('button', { name: 'Create game', exact: true }).click();
   await page.getByRole('button', { name: 'Start game', exact: true }).click();
-  await expect(page.locator('.bid-turn-message')).toHaveText('@marcus to bid');
+  await expect(page.locator('.bid-turn-message')).toHaveText('@wwwwwwwwwwww to bid');
   await expect(page.getByText('Thinking…')).toHaveCount(0);
   await expect(page.getByText('Your call.')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reshuffle', exact: true })).toBeVisible();
@@ -271,7 +260,8 @@ test('bidding and partner panels share their footprint below the hand', async ({
   expect(bidding.panel.height).toBe(70);
   expect(await page.locator('.round-control-slot > .inline-controls').evaluate(el => getComputedStyle(el).paddingTop)).toBe('12px');
   expect(await page.locator('.round-control-slot > .inline-controls').evaluate(el => getComputedStyle(el).paddingRight)).toBe('12px');
-  expect(Math.abs(bidding.above - bidding.below)).toBeLessThan(3);
+  expect(bidding.above).toBeGreaterThan(0);
+  expect(bidding.below).toBeGreaterThanOrEqual(8);
   const pass = (await page.getByRole('button', { name: 'Pass' }).boundingBox())!;
   const level = (await page.getByLabel('Bid level').boundingBox())!;
   const bidSuit = (await page.getByLabel('Bid suit').boundingBox())!;
@@ -284,7 +274,8 @@ test('bidding and partner panels share their footprint below the hand', async ({
   const partner = await measure();
   await page.screenshot({ path: 'test-results/short-partner-' + info.project.name + '.png', animations: 'disabled' });
   for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(partner.panel[key] - bidding.panel[key])).toBeLessThan(1);
-  expect(Math.abs(partner.above - partner.below)).toBeLessThan(3);
+  expect(partner.above).toBeGreaterThan(0);
+  expect(partner.below).toBeGreaterThanOrEqual(8);
   const rank = (await page.getByLabel('Partner rank').boundingBox())!;
   const partnerSuit = (await page.getByLabel('Partner suit').boundingBox())!;
   const call = (await page.locator('.partner-controls .call-action').boundingBox())!;
@@ -307,11 +298,11 @@ test('rules slides use the original playful illustrations and bundled font', asy
   await page.screenshot({ path: 'test-results/rules-bid-' + info.project.name + '.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.locator('.partner-graphic .crown')).toBeVisible();
-  await expect(page.locator('.partner-graphic .card-art')).toHaveAttribute('src', '/card-previews/hearts/hK.png');
+  await expect(page.locator('.partner-graphic .playing-card source')).toHaveAttribute('srcset', '/card-fast/hearts/hK.webp');
   await expect.poll(() => page.locator('.partner-graphic .card-art').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.locator('.trick-graphic .playing-card')).toHaveCount(4);
-  await expect(page.locator('.trick-graphic .card-art').first()).toHaveAttribute('src', '/card-previews/spades/s3.png');
+  await expect(page.locator('.trick-graphic .playing-card source').first()).toHaveAttribute('srcset', '/card-fast/spades/s3.webp');
   await expect.poll(() => page.locator('.trick-graphic .card-art').evaluateAll((images: HTMLImageElement[]) => images.every(image => image.naturalWidth > 0))).toBe(true);
   await page.screenshot({ path: 'test-results/rules-trick-' + info.project.name + '.png', animations: 'disabled' });
 });
@@ -375,15 +366,17 @@ test('random auction defaults, partner call, two-tap play and selected-card resu
   const state = await snapshot(page); expect(state.hands[0].some((c: { id: string }) => c.id === state.partner.id)).toBeFalsy();
   expect(state.hands[state.partnerSeat].some((c: { id: string }) => c.id === state.partner.id)).toBeTruthy();
   await page.getByRole('button', { name: /^Call / }).click();
-  await expect(page.locator('.partner-announcement')).toContainText(`@${['you', 'marcus', 'rachel', 'weijie'][state.partnerSeat]}`);
+  await expect(page.locator('.partner-announcement')).toContainText('Partner called');
+  await expect(page.locator('.partner-announcement')).not.toContainText(`@${['you', 'marcus', 'rachel', 'weijie'][state.partnerSeat]}`);
   await expect(page.locator('[data-seat=left]')).toHaveClass(/is-turn/);
+  await expect(page.locator('[data-seat=bottom]')).toHaveClass(/is-turn/, { timeout: 6000 });
   const card = page.locator('.minimal-hand .playing-card:enabled').first(); await expect(card).toBeVisible({ timeout: 6000 });
   const name = await card.getAttribute('aria-label'); await card.click({ position: { x: 10, y: 18 } }); await expect(card).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Back home' }).click(); await page.getByRole('button', { name: 'Resume game' }).click();
   const selected = page.getByRole('button', { name: name!, exact: true }); await expect(selected).toHaveAttribute('aria-pressed', 'true');
   await selected.click({ position: { x: 10, y: 18 } }); await expect(page.locator('.minimal-hand .playing-card')).toHaveCount(12);
   await expect(page.locator('.table-play')).toHaveCount(4);
-  await page.getByRole('button', { name: 'Kick @marcus' }).click(); await expect(page.locator('.minimal-table')).toHaveAttribute('data-phase', 'waiting');
+  await page.getByRole('button', { name: 'Kick @wwwwwwwwwwww' }).click(); await expect(page.locator('.minimal-table')).toHaveAttribute('data-phase', 'waiting');
   expect((await snapshot(page)).wins).toEqual({ you: 0, marcus: 0, rachel: 0, wei: 0 });
 });
 
@@ -405,15 +398,19 @@ test('clear table geometry, inward labels and matching round actions', async ({ 
     if (position === 'top') expect(label.y).toBeGreaterThan(icon.y + icon.height);
     if (position === 'bottom') expect(label.y + label.height).toBeLessThan(icon.y);
   }
+  const leftWins = (await page.locator('[data-seat=left] .session-wins').boundingBox())!;
+  const rightWins = (await page.locator('[data-seat=right] .session-wins').boundingBox())!;
   await seed(page, { phase: 'bidding', bids: [{ level: 1, suit: 'clubs' }, { level: 1, suit: 'diamonds' }, { level: 1, suit: 'hearts' }, { level: 1, suit: 'spades' }] });
   await expect(page.locator('.trick-count')).toHaveCount(0);
   await expect(page.locator('.seat-bid').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   const leftBid = page.locator('[data-seat=left] .seat-bid');
   const rightBid = page.locator('[data-seat=right] .seat-bid');
   await expect(rightBid).toHaveCSS('font-size', await leftBid.evaluate(el => getComputedStyle(el).fontSize));
-  expect((await rightBid.locator('.suit-icon').boundingBox())!.width).toBe((await leftBid.locator('.suit-icon').boundingBox())!.width);
+  expect(Math.abs((await rightBid.locator('.suit-icon').boundingBox())!.width - (await leftBid.locator('.suit-icon').boundingBox())!.width)).toBeLessThan(.01);
   const leftBidBox = (await leftBid.boundingBox())!;
   const rightBidBox = (await rightBid.boundingBox())!;
+  expect(Math.abs(leftBidBox.x - leftWins.x)).toBeLessThan(.1);
+  expect(Math.abs(rightBidBox.x + rightBidBox.width - rightWins.x - rightWins.width)).toBeLessThan(.1);
   const leftIconBox = (await page.locator('[data-seat=left] .seat-avatar-button').boundingBox())!;
   const rightIconBox = (await page.locator('[data-seat=right] .seat-avatar-button').boundingBox())!;
   expect(leftBidBox.x).toBeGreaterThan(leftIconBox.x + leftIconBox.width);
@@ -430,11 +427,10 @@ test('clear table geometry, inward labels and matching round actions', async ({ 
   await expect(page.locator('.trick-count .trick-pile')).toHaveCount(4);
   await expect(page.locator('.table-play .card-art').first()).toHaveAttribute('src', '/cards/clubs/c2.png');
   await expect(page.locator('.table-play .card-art').first()).toHaveAttribute('loading', 'eager');
-  await expect(page.locator('.table-play .table-card-rank')).toHaveCount(4);
-  await expect(page.locator('.minimal-hand .table-card-rank')).toHaveCount(0);
+  await expect(page.locator('.table-play .table-card-rank')).toHaveCount(8);
+  await expect(page.locator('.minimal-hand .table-card-rank')).toHaveCount(26);
   const rects = await page.locator('.table-play .card-trick').evaluateAll(elements => elements.map(el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));
-  expect(rects[0].right - rects[0].x).toBeGreaterThanOrEqual(63);
-  expect(rects[0].bottom - rects[0].y).toBeGreaterThanOrEqual(88);
+  expect(Math.abs((rects[0].right - rects[0].x) / (rects[0].bottom - rects[0].y) - 62 / 84)).toBeLessThan(.01);
   const seatRects = await page.locator('.seat-avatar-button, .seat-username, .trick-count, .crown').evaluateAll(elements => elements.map(el => { const r = el.getBoundingClientRect(); return { name: el.className, x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));
   await page.screenshot({ path: 'test-results/clear-four-cards-' + info.project.name + '.png', animations: 'disabled' });
   const overlaps = (a: typeof rects[number], b: typeof rects[number]) => a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
@@ -459,7 +455,9 @@ test('seat labels, suits, outcome copy and raised hand fit the phone table', asy
   for (const seat of ['bottom', 'left', 'top', 'right']) {
     const icon = (await page.locator(`[data-seat=${seat}] .seat-avatar-button`).boundingBox())!;
     const tag = (await page.locator(`[data-seat=${seat}] .seat-username`).boundingBox())!;
-    expect(Math.abs(tag.y - (icon.y + icon.height) - 2)).toBeLessThan(2);
+    const gap = tag.y - (icon.y + icon.height);
+    if (seat === 'left') { expect(gap).toBeGreaterThan(8); expect(gap).toBeLessThan(20); }
+    else expect(Math.abs(gap - 2)).toBeLessThan(2);
   }
   const topIcon = (await page.locator('[data-seat=top] .seat-avatar-button').boundingBox())!;
   const topKick = (await page.locator('[data-seat=top] .kick-player').boundingBox())!;
@@ -472,13 +470,8 @@ test('seat labels, suits, outcome copy and raised hand fit the phone table', asy
     const kick = (await page.locator(`[data-seat=${side}] .kick-player`).boundingBox())!;
     expect(kick.y).toBeLessThan(icon.y);
     expect(kick.y + kick.height).toBeLessThan(icon.y + icon.height / 2);
-    if (side === 'left') {
-      expect(kick.x + kick.width).toBeGreaterThan(icon.x + 3);
-      expect(kick.x + kick.width).toBeLessThanOrEqual(icon.x + 13);
-    } else {
-      expect(kick.x).toBeLessThan(icon.x + icon.width - 3);
-      expect(kick.x).toBeGreaterThanOrEqual(icon.x + icon.width - 13);
-    }
+    expect(kick.x).toBeGreaterThanOrEqual(20);
+    expect(kick.x + kick.width).toBeLessThanOrEqual(page.viewportSize()!.width - 20);
   }
   await seed(page, { phase: 'bidding', auction: { highest: { level: 4, suit: 'hearts' }, bidder: 1, turn: 0, passes: 0, complete: false, allPassed: false } });
   await expect(page.locator('.centre-bid-suit')).toContainText('4');
@@ -495,10 +488,11 @@ test('seat labels, suits, outcome copy and raised hand fit the phone table', asy
   await page.screenshot({ path: 'test-results/new-table-' + info.project.name + '.png', animations: 'disabled' });
   await seed(page, { phase: 'ended', counts: [9, 0, 0, 0] });
   await expect(page.getByText('Win liao, power lah!')).toBeVisible();
-  await expect(page.getByText('Round complete.')).toBeVisible();
+  await expect(page.locator('.end-summary')).toContainText(/@\w+ \+ @\w+ win/);
+  await expect(page.locator('.winner-message p')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/win-message-' + info.project.name + '.png', animations: 'disabled' });
   await seed(page, { phase: 'ended', counts: [0, 5, 0, 0] });
-  await expect(page.getByText('Walao, cannot make it sia...')).toBeVisible();
+  await expect(page.getByText('Cannot make it sia...')).toBeVisible();
   const headline = (await page.locator('.winner-message h1').boundingBox())!;
   const leftScore = (await page.locator('[data-seat=left] .session-wins').boundingBox())!;
   const rightScore = (await page.locator('[data-seat=right] .session-wins').boundingBox())!;

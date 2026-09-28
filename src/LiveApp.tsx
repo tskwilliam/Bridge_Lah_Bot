@@ -13,6 +13,7 @@ export function LiveApp() {
   const [gameId, setGameId] = useState('');
   const [scores, setScores] = useState<LeaderboardRecord[]>([]);
   const [error, setError] = useState('');
+  const [creating, setCreating] = useState(false);
   const openedLaunch = useRef(false);
 
   useEffect(() => {
@@ -36,12 +37,14 @@ export function LiveApp() {
     if (next === 'leaderboard' && context) liveLeaderboard(context).then(result => setScores(result.scores)).catch(reason => setError(reason instanceof Error ? reason.message : 'Leaderboard unavailable.'));
   }
   async function create() {
-    if (!context) return;
+    if (!context || creating) return;
+    setCreating(true);
     try {
       const result = await createLiveGame(context);
       setContext({ ...context, resumeId: result.id });
       setGameId(result.id); setScreen('game'); setError('');
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not create a game.'); }
+    finally { setCreating(false); }
   }
   function home() {
     setScreen('home'); setGameId(''); setError('');
@@ -49,8 +52,8 @@ export function LiveApp() {
   }
   if (!context) return error ? <main className="simple-home live-entry"><p role="alert">{error}</p></main> : <SuitLoader/>;
   return <div className={`simple-app ${screen === 'game' ? 'on-game' : 'on-home'}`}>
-    {screen === 'home' && <><Home live onCreate={() => { void create(); }} navigate={navigate} onResume={context.resumeId ? () => { setGameId(context.resumeId!); setScreen('game'); } : undefined}/>{error && <p className="live-home-error" role="alert">{error}</p>}</>}
-    {screen === 'leaderboard' && <><Leaderboard onHome={home} records={scores}/>{error && <p className="live-home-error" role="alert">{error}</p>}</>}
+    {screen === 'home' && <><Home live creating={creating} onCreate={() => { void create(); }} navigate={navigate} onResume={context.resumeId ? () => { setGameId(context.resumeId!); setScreen('game'); } : undefined}/>{error && <p className="live-home-error" role="alert">{error}</p>}</>}
+    {screen === 'leaderboard' && <><Leaderboard onHome={home} records={scores} currentPlayerId={String(context.user.id)}/>{error && <p className="live-home-error" role="alert">{error}</p>}</>}
     {screen === 'rules' && <Rules onHome={home}/>}
     {screen === 'game' && <GameTable key={gameId} gameId={gameId} initialPhase="waiting" embedded={false} host onHome={home} live={context}/>}
   </div>;

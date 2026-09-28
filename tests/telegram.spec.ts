@@ -5,10 +5,10 @@ import worker from '../worker/index';
 
 const botToken = 'test-token-only';
 
-function signedLaunch(date = Math.floor(Date.now() / 1000)) {
+function signedLaunch(date = Math.floor(Date.now() / 1000), startParam = 'g_-100123456_abc') {
   const params = new URLSearchParams({
     auth_date: String(date),
-    start_param: 'g_-100123456_abc',
+    start_param: startParam,
     user: JSON.stringify({ id: 123456, first_name: 'Test', username: 'test_player' }),
   });
   const check = Array.from(params.keys()).sort().map(key => `${key}=${params.get(key)}`).join('\n');
@@ -27,6 +27,22 @@ test('Telegram launch verification rejects altered and expired identities', asyn
   const duplicate = signedLaunch();
   duplicate.append('user', duplicate.get('user')!);
   expect(await verifyInitData(duplicate.toString(), botToken)).toBeNull();
+});
+
+test('signed group launch works when regular-member bot cannot check the user', async () => {
+  const secret = 'local-link-test-secret';
+  const link = await groupToken(-100123456, secret);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('getChatMember unavailable'); };
+  try {
+    const env = {
+      BOT_TOKEN: botToken, LINK_SECRET: secret,
+      ROOMS: { idFromName: (id: string) => id, get: () => ({ fetch: async () => Response.json({ resumeId: null }) }) },
+    } as unknown as Parameters<typeof worker.fetch>[1];
+    const response = await worker.fetch(new Request('https://bridge.test/api/context', { headers: { Authorization: `tma ${signedLaunch(undefined, link)}` } }), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as { user: { id: number } }).user.id).toBe(123456);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 test('bot removal update clears only its group room', async () => {
