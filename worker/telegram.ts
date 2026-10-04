@@ -1,8 +1,11 @@
+import type { SharedPlayer } from '../src/game/shared';
 export interface TelegramUser {
   id: number;
   username?: string;
   photo_url?: string;
 }
+
+export const playerFrom = (user: TelegramUser): SharedPlayer => ({ id: String(user.id), username: user.username ? `@${user.username}` : 'Guest', initials: user.username?.slice(0, 1).toUpperCase() ?? '?', photoUrl: user.photo_url });
 
 export interface VerifiedLaunch {
   user: TelegramUser;

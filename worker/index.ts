@@ -1,5 +1,5 @@
-import { groupToken, issueSession, parseStartParam, verifyGroupToken, verifyInitData, verifySession, type TelegramUser } from './telegram';
-import type { SharedAction, SharedPlayer } from '../src/game/shared';
+import { groupToken, issueSession, parseStartParam, verifyGroupToken, verifyInitData, verifySession, playerFrom } from './telegram';
+import type { SharedAction } from '../src/game/shared';
 export { GroupRoom } from './room';
 
 interface Env {
@@ -16,7 +16,6 @@ interface BotUpdate { message?: BotMessage; my_chat_member?: { chat: { id: numbe
 interface ChatMemberResponse { ok: boolean; result?: { status: string; is_member?: boolean } }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
-const playerFrom = (user: TelegramUser): SharedPlayer => ({ id: String(user.id), username: user.username ? `@${user.username}` : 'Guest', initials: user.username?.slice(0, 1).toUpperCase() ?? '?', photoUrl: user.photo_url });
 
 async function botCall(env: Env, method: string, body: object) {
   const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {

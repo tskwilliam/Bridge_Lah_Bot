@@ -49,7 +49,7 @@ async function openAsStranger(page: import('@playwright/test').Page, shown: Retu
   await page.route('https://telegram.org/js/telegram-web-app.js?63', route => route.fulfill({ contentType: 'application/javascript', body: 'window.Telegram={WebApp:{initData:"signed-test-launch",ready(){},expand(){}}};' }));
   await page.route('**/api/context', route => route.fulfill({ json: { token: 'test-session', user: { id: 9, first_name: 'Watcher' }, groupToken: 'test-group', startGameId: id, resumeId: null } }));
   await page.route(`**/api/games/${id}/join`, route => route.fulfill({ status: 409, json: { error: 'The game has already started.', spectate: true } }));
-  await page.route(`**/api/games/${id}`, route => route.fulfill({ json: { state: sharedView(shown, '9') } }));
+  await page.route(`**/api/games/${id}`, route => route.fulfill({ json: { state: sharedView(shown, '9', [{ id: '9', username: '@watcher', initials: 'W' }, { id: '10', username: '@other', initials: 'O' }]) } }));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
 }
 
@@ -58,7 +58,8 @@ test('a late arrival can spectate and look at a player\'s cards', async ({ page 
   await openAsStranger(page, started);
   await expect(page.getByRole('alert')).toContainText('The game has already started.');
   await page.getByRole('button', { name: 'Spectate', exact: true }).click();
-  await expect(page.getByText(/Spectating/)).toBeVisible();
+  await expect(page.getByText('Tap a player to see their cards')).toBeVisible();
+  await expect(page.locator('.viewers-row .member-avatar')).toHaveCount(2);
   await expect(page.locator('.minimal-hand')).toHaveCount(0);
   await page.getByRole('button', { name: "See @live2's cards" }).click();
   await expect(page.locator('.peek-hand .playing-card')).toHaveCount(13);

@@ -1208,18 +1208,24 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
 .trick-pile svg { display: block; width: 100%; height: 100%; }
 .trick-pile b { position: absolute; left: 47%; top: 55%; translate: -50% -50%; font-size: 12px; line-height: 1; letter-spacing: -.5px; }
 /* After the last trick everyone's leftover cards are shown above the result. */
-.remaining-cards { display: grid; gap: 2px; width: fit-content; max-width: 100%; margin: 0 auto 8px; }
+.remaining-cards { display: grid; gap: 2px; width: fit-content; max-width: 100%; margin: 0 auto 2px; }
 .remaining-row { display: flex; align-items: center; gap: 8px; min-height: 24px; }
 .remaining-name { flex: none; width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 750; }
 .remaining-hand { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; font-size: 12px; color: var(--text-secondary); }
 .remain-card { display: inline-flex; align-items: center; gap: 1px; height: 22px; padding: 0 4px; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--card-paper, #fff); color: var(--ink); }
 .remain-card b { font-size: 12px; font-weight: 800; letter-spacing: -.5px; }
 .remain-card .suit-icon { width: 13px; height: 13px; }
-.simple-app.on-game .lobby-actions:has(.end-summary) { grid-template-rows: 40px 56px; }
+.simple-app.on-game .lobby-actions:has(.end-summary) { grid-template-rows: 32px 56px; }
 .simple-app.on-game .round-settings:has(.end-summary) { grid-template-rows: minmax(0, 1fr); }
 .simple-app.on-game .round-settings .end-summary { grid-row: 1; }
 /* Spectators: a short label, the tapped player's cards, and a Join button on an open seat. */
-.spectating-note { position: absolute; z-index: 7; top: 66px; left: 20px; right: 20px; margin: 0; text-align: center; font-size: 11px; font-weight: 750; color: var(--text-secondary); pointer-events: none; }
+.viewers-row { position: absolute; z-index: 7; top: 66px; left: 20px; right: 20px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-secondary); pointer-events: none; }
+.viewers-avatars { display: flex; }
+.viewers-avatars .member-avatar { width: 22px; height: 22px; border: 2px solid var(--ink); font-size: 10px; margin-left: -6px; }
+.viewers-avatars .member-avatar:first-child { margin-left: 0; }
+.viewers-row b { font-size: 12px; font-weight: 800; }
+.peek-hint { margin: 0 0 28px; text-align: center; font-size: 12px; font-weight: 750; color: var(--text-secondary); }
+.simple-app.on-game .minimal-table .minimal-hand.peek-hand { margin-block: auto 16px; }
 .peek-name { margin: 0 0 4px; text-align: center; font-size: 14px; font-weight: 800; }
 .peek-empty { margin: 0; text-align: center; font-size: 13px; color: var(--text-secondary); }
 .peek-hand .playing-card { pointer-events: none; }

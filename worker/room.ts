@@ -1,10 +1,10 @@
 import { applySharedAction, advanceSharedGame, GameActionError, newSharedGame, sharedView, type SharedAction, type SharedGame, type SharedPlayer, type SharedSettings } from '../src/game/shared';
-import { verifySession, type GameSession } from './telegram';
+import { playerFrom, verifySession, type GameSession } from './telegram';
 
 interface RoomEnv { LINK_SECRET: string }
 interface Scores { player: SharedPlayer; wins: number; games: number }
 interface SocketAuth { type: 'auth'; token: string; gameId: string }
-interface Attachment { gameId: string; userId: string; role?: 'player' | 'spectator' }
+interface Attachment { gameId: string; userId: string; role?: 'player' | 'spectator'; player?: SharedPlayer }
 
 const answer = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
 const gameKey = (id: string) => `game:${id}`;
@@ -36,20 +36,36 @@ export class GroupRoom {
     else await this.ctx.storage.deleteAlarm();
   }
 
-  private sendState(game: SharedGame, userId: string, socket: WebSocket) {
-    try { socket.send(JSON.stringify({ type: 'state', state: sharedView(game, userId) })); }
+  // Everyone connected to this game without a seat is watching, once each, in the order they arrived.
+  private spectators(game: SharedGame, except?: WebSocket): SharedPlayer[] {
+    const seen = new Map<string, SharedPlayer>();
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket === except) continue;
+      const attachment = socket.deserializeAttachment() as Attachment | null;
+      if (attachment?.gameId !== game.id || attachment.role !== 'spectator' || !attachment.player) continue;
+      if (game.seats.some(player => player?.id === attachment.userId)) continue;
+      seen.set(attachment.userId, attachment.player);
+    }
+    return [...seen.values()];
+  }
+
+  private view(game: SharedGame, userId: string, except?: WebSocket) { return sharedView(game, userId, this.spectators(game, except)); }
+
+  private sendState(game: SharedGame, userId: string, socket: WebSocket, except?: WebSocket) {
+    try { socket.send(JSON.stringify({ type: 'state', state: this.view(game, userId, except) })); }
     catch { /* The player can reconnect and fetch the current state. */ }
   }
 
-  private broadcast(game: SharedGame) {
+  private broadcast(game: SharedGame, except?: WebSocket) {
     for (const socket of this.ctx.getWebSockets()) {
+      if (socket === except) continue;
       const attachment = socket.deserializeAttachment() as Attachment | null;
       if (attachment?.gameId !== game.id) continue;
       if (game.seats.some(player => player?.id === attachment.userId)) {
         // A spectator who took a seat becomes a player here, and is told if they are removed later.
         if (attachment.role !== 'player') socket.serializeAttachment({ ...attachment, role: 'player' } satisfies Attachment);
-        this.sendState(game, attachment.userId, socket);
-      } else if (attachment.role === 'spectator') this.sendState(game, attachment.userId, socket);
+        this.sendState(game, attachment.userId, socket, except);
+      } else if (attachment.role === 'spectator') this.sendState(game, attachment.userId, socket, except);
       else { try { socket.send(JSON.stringify({ type: 'removed' })); socket.close(1000, 'Left game'); } catch { /* Closed already. */ } }
     }
   }
@@ -114,7 +130,7 @@ export class GroupRoom {
           if (await this.game(body.id)) return answer({ error: 'Game already exists' }, 409);
           const settings = await this.ctx.storage.get<SharedSettings>(settingsKey(userId)) ?? { breakTrump: false, reshuffleEnabled: false, reshuffleThreshold: 4 };
           const game = await this.save(null, newSharedGame(body.id, body.session.chatId, body.player, settings, Date.now()));
-          return answer({ state: sharedView(game, userId) }, 201);
+          return answer({ state: this.view(game, userId) }, 201);
         }
         if (!body.id) return answer({ error: 'Game ID required' }, 400);
         const game = await this.fresh(body.id);
@@ -129,9 +145,9 @@ export class GroupRoom {
           if (!body.player || body.player.id !== userId) return answer({ error: 'Invalid player' }, 400);
           const next = applySharedAction(game, userId, { type: 'join', player: body.player }, Date.now());
           const committed = next !== game ? await this.save(game, next) : game;
-          return answer({ state: sharedView(committed, userId) });
+          return answer({ state: this.view(committed, userId) });
         }
-        if (path === '/state') return answer({ state: sharedView(game, userId) });
+        if (path === '/state') return answer({ state: this.view(game, userId) });
         if (path === '/action') {
           if (!body.action || typeof body.action.type !== 'string') return answer({ error: 'Action required' }, 400);
           const next = applySharedAction(game, userId, body.action, Date.now());
@@ -143,7 +159,7 @@ export class GroupRoom {
             }
             committed = await this.save(game, next);
           }
-          return answer({ state: committed.seats.some(player => player?.id === userId) ? sharedView(committed, userId) : null });
+          return answer({ state: committed.seats.some(player => player?.id === userId) ? this.view(committed, userId) : null });
         }
         return answer({ error: 'Not found' }, 404);
       } catch (error) {
@@ -165,10 +181,24 @@ export class GroupRoom {
       if (!session || !game || session.chatId !== game.groupId) { socket.close(1008, 'Unauthorized'); return; }
       // Any member of the group may watch; being seated decides which view they get.
       const seated = game.seats.some(player => player?.id === String(session.user.id));
-      socket.serializeAttachment({ gameId: game.id, userId: String(session.user.id), role: seated ? 'player' : 'spectator' } satisfies Attachment);
-      this.sendState(game, String(session.user.id), socket);
+      socket.serializeAttachment({ gameId: game.id, userId: String(session.user.id), role: seated ? 'player' : 'spectator', ...(seated ? {} : { player: playerFrom(session.user) }) } satisfies Attachment);
+      // Arriving spectators change what everyone sees, so tell the whole table.
+      if (seated) this.sendState(game, String(session.user.id), socket); else this.broadcast(game);
     });
   }
+
+  // A spectator leaving updates the list for everyone still at the table.
+  private async spectatorLeft(socket: WebSocket) {
+    await this.serial(async () => {
+      const attachment = socket.deserializeAttachment() as Attachment | null;
+      if (attachment?.role !== 'spectator') return;
+      const game = await this.game(attachment.gameId);
+      if (game) this.broadcast(game, socket);
+    });
+  }
+
+  async webSocketClose(socket: WebSocket) { await this.spectatorLeft(socket); }
+  async webSocketError(socket: WebSocket) { await this.spectatorLeft(socket); }
 
   async alarm() {
     await this.serial(async () => {

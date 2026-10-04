@@ -77,6 +77,8 @@ test('someone without a seat can watch, and a seat opened after a round can be t
   expect(seen.validIds).toEqual([]);
   expect(seen.spectatorHands!.map(hand => hand.length)).toEqual([13, 13, 13, 13]);
   expect(sharedView(game, players[0].id).spectatorHands).toBeNull();
+  expect(sharedView(game, players[0].id, [watcher]).spectators).toEqual([watcher]);
+  expect(sharedView(game, players[0].id).spectators).toEqual([]);
   let error: unknown;
   try { applySharedAction(game, watcher.id, { type: 'join', player: watcher }, ++now); } catch (reason) { error = reason; }
   expect(error).toMatchObject({ message: 'The game has already started.', code: 'started' });

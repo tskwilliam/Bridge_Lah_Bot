@@ -1,6 +1,7 @@
-type IconName = 'arrow' | 'back' | 'close' | 'users' | 'plus' | 'play' | 'copy' | 'check' | 'grid' | 'book' | 'trophy' | 'quit';
+type IconName = 'arrow' | 'back' | 'close' | 'users' | 'plus' | 'play' | 'copy' | 'check' | 'grid' | 'book' | 'trophy' | 'quit' | 'eye';
 const paths: Record<IconName, string> = {
   quit: 'M10 4H4v16h6M9 12h12m-5-5 5 5-5 5',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zm10-3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   arrow: 'M5 12h14m-6-6 6 6-6 6', back: 'M19 12H5m6-6-6 6 6 6', close: 'm6 6 12 12M6 18 18 6',
   users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M15 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
   plus: 'M12 5v14M5 12h14', play: 'M8 5v14l11-7z', copy: 'M9 9h12v12H9zM5 15H3V3h12v2', check: 'm5 12 4 4L19 6',

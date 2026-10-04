@@ -186,7 +186,7 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
   return game;
 }
 
-export function sharedView(game: SharedGame, userId: string) {
+export function sharedView(game: SharedGame, userId: string, spectators: SharedPlayer[] = []) {
   // Someone without a seat watches from the first seat's point of view and sees every hand.
   const spectating = playerSeat(game, userId) < 0;
   const own = spectating ? 0 : playerSeat(game, userId);
@@ -211,7 +211,7 @@ export function sharedView(game: SharedGame, userId: string) {
     biddingBusy: spectating || game.phase !== 'bidding' || game.auction.turn !== own || game.shuffleStage !== null,
     declarerHand: game.declarer === own ? cards : [],
     // Hands stay private until the round is over, then everyone sees what was left.
-    spectating, spectatorHands: spectating ? rotate(game.hands).map(hand => sortCards(hand)) : null,
+    spectators, spectating, spectatorHands: spectating ? rotate(game.hands).map(hand => sortCards(hand)) : null,
     revealedHands: game.phase === 'ended' ? rotate(game.hands).map(hand => sortCards(hand)) : null,
   };
 }

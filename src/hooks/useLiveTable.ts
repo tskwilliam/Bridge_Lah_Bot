@@ -125,7 +125,7 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     bids: view.bids, highestBid: view.highestBid, biddingBusy: view.biddingBusy,
     breakTrump: view.breakTrump, reshuffleEnabled: view.reshuffleEnabled, reshuffleThreshold: view.reshuffleThreshold,
     shuffling: view.shuffling, shuffleReveal: view.shuffleReveal, canReshuffle: view.canReshuffle,
-    spectating: view.spectating, spectatorHands: view.spectatorHands, joinSeat: () => { void joinSeat(); },
+    spectators: view.spectators, spectating: view.spectating, spectatorHands: view.spectatorHands, joinSeat: () => { void joinSeat(); },
     revealedHands: view.revealedHands, goal: view.goal, outcome: view.outcome, validIds: view.validIds, ready: view.ready, notice: view.notice,
     callPartner: (card: Card) => { void send({ type: 'partner', card }); },
     placeBid: bid => { void send({ type: 'bid', bid }); },
