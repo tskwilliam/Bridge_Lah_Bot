@@ -28,6 +28,7 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
   const preview = useTablePreview(gameId, initialPhase, embedded || !!live);
   const remote = useLiveTable(gameId, live, preview);
   const table = live ? remote.table ?? preview : preview;
+  const loading = Boolean(live && !remote.table);
   const [swapFrom, setSwapFrom] = useState<number | null>(null);
   const [fillAt, setFillAt] = useState<number | null>(null);
   const [suitFrame, setSuitFrame] = useState(0);
@@ -44,7 +45,7 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
   const reshuffleRequester = table.notice.split(' requested a reshuffle')[0];
   useLayoutEffect(() => {
     const frame = layoutRef.current;
-    if (!frame) return;
+    if (loading || !frame) return;
     const update = () => {
       const width = frame.clientWidth;
       const height = frame.clientHeight;
@@ -65,7 +66,7 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
         const scoreTop = handTop - 52;
         // The hand and score are the shared lower limit in every phase.
         const lowerBoundary = handTop - 90;
-        groupSize = Math.max(32, Math.min((width / 2 - 20) * 420 / tableLayout.radiusX, ((lowerBoundary - 64) / 2 - 20) * 420 / tableLayout.radiusY));
+        groupSize = Math.max(32, 0.9 * Math.min((width / 2 - 20) * 420 / tableLayout.radiusX, ((lowerBoundary - 64) / 2 - 20) * 420 / tableLayout.radiusY));
         frame.style.setProperty('--group-left', `${width / 2 - tableLayout.centerX * groupSize / 420}px`);
         frame.style.setProperty('--group-top', `${(64 + lowerBoundary) / 2 - tableLayout.centerY * groupSize / 420}px`);
         frame.style.setProperty('--bottom-margin', `${bottomMargin}px`);
@@ -79,7 +80,7 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
     const observer = new ResizeObserver(update);
     observer.observe(frame);
     return () => observer.disconnect();
-  }, []);
+  }, [loading]);
   useEffect(() => {
     const until = table.announcementUntil;
     if (table.phase !== 'playing' || !until || until + 350 <= Date.now()) { setAnnouncementVisible(false); setAnnouncementLeaving(false); return; }
