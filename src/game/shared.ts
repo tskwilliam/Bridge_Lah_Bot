@@ -1,4 +1,4 @@
-import { auctionCall, newAuction, suggestPartner, type Auction } from './bidding';
+import { auctionCall, newAuction, sortCards, suggestPartner, type Auction } from './bidding';
 import { dealHands, handStrength, relativeSeat } from './deal';
 import { legalCards, roundOutcome, targets, trickWinner, trumpWonTrick, type Play } from './round';
 import { ranks, suits, type Bid, type Card, type GamePhase, type Member } from '../types/game';
@@ -203,6 +203,8 @@ export function sharedView(game: SharedGame, userId: string) {
     goal: targets(game.bid.level), outcome: roundOutcome(game.counts, game.declarer, game.partnerSeat, game.bid.level),
     biddingBusy: game.phase !== 'bidding' || game.auction.turn !== own || game.shuffleStage !== null,
     declarerHand: game.declarer === own ? cards : [],
+    // Hands stay private until the round is over, then everyone sees what was left.
+    revealedHands: game.phase === 'ended' ? rotate(game.hands).map(hand => sortCards(hand)) : null,
   };
 }
 

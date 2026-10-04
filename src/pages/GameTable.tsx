@@ -114,6 +114,7 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
     </section></div></div>
     {inPlay && <div className="target-split round-scoreboard" aria-label={`Trick targets: declarers ${table.goal.declaring}, defenders ${table.goal.defending}`}><span>Declarers <b>{table.goal.declaring}</b></span><span className="split-divider">:</span><span><b>{table.goal.defending}</b> Defenders</span></div>}
     <div className="table-bottom">
+      {table.phase === 'ended' && table.revealedHands && <div className="remaining-cards" aria-label="Remaining cards">{table.revealedHands.map((hand, index) => seated[index] && <div key={seated[index]!.id} className="remaining-row"><span className="remaining-name">{seated[index]!.username}</span><span className="remaining-hand">{hand.length ? hand.map(card => <span key={card.id} className="remain-card" aria-label={`${card.rank} of ${card.suit}`}><b>{card.rank}</b><SuitIcon suit={card.suit}/></span>) : <i>No cards left</i>}</span></div>)}</div>}
       {(waiting || table.phase === 'ended') && <div className="lobby-actions">
         <div className="round-settings">{waiting ? <>
           <button className="trump-toggle" type="button" aria-pressed={table.breakTrump} disabled={!table.isDealer} onClick={table.toggleBreakTrump} title="Lead trump only after it wins a trick, or when only trumps remain."><span className="toggle-dot" aria-hidden="true"/>Break trump</button>

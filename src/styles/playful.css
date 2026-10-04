@@ -1207,3 +1207,14 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
 .trick-pile { position: relative; display: inline-block; width: 32px; height: 29px; }
 .trick-pile svg { display: block; width: 100%; height: 100%; }
 .trick-pile b { position: absolute; left: 47%; top: 55%; translate: -50% -50%; font-size: 12px; line-height: 1; letter-spacing: -.5px; }
+/* After the last trick everyone's leftover cards are shown above the result. */
+.remaining-cards { display: grid; gap: 2px; width: fit-content; max-width: 100%; margin: 0 auto 8px; }
+.remaining-row { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.remaining-name { flex: none; width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 750; }
+.remaining-hand { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; font-size: 12px; color: var(--text-secondary); }
+.remain-card { display: inline-flex; align-items: center; gap: 1px; height: 22px; padding: 0 4px; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--card-paper, #fff); color: var(--ink); }
+.remain-card b { font-size: 12px; font-weight: 800; letter-spacing: -.5px; }
+.remain-card .suit-icon { width: 13px; height: 13px; }
+.simple-app.on-game .lobby-actions:has(.end-summary) { grid-template-rows: 40px 56px; }
+.simple-app.on-game .round-settings:has(.end-summary) { grid-template-rows: minmax(0, 1fr); }
+.simple-app.on-game .round-settings .end-summary { grid-row: 1; }
