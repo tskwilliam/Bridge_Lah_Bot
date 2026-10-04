@@ -12,6 +12,8 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
+  const [canSpectate, setCanSpectate] = useState(false);
+  const [watching, setWatching] = useState(false);
   const sending = useRef(false);
 
   useEffect(() => {
@@ -52,10 +54,15 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
       failures = 0;
       connect();
     };
-    joinLiveGame(context, gameId).then(result => {
+    // Someone who chose to watch loads the table without taking a seat.
+    (watching ? liveGame(context, gameId) : joinLiveGame(context, gameId)).then(result => {
       if (!active) return;
       update(result.state); setError(''); connect();
-    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Could not join the game.'); });
+    }).catch(reason => {
+      if (!active) return;
+      setCanSpectate((reason as { spectate?: boolean } | null)?.spectate === true);
+      setError(reason instanceof Error ? reason.message : 'Could not join the game.');
+    });
     const resume = () => {
       if (!active || removed || document.visibilityState !== 'visible') return;
       liveGame(context, gameId).then(result => { if (active) update(result.state); }).catch(() => undefined);
@@ -74,7 +81,15 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
       document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('focus', resume);
       if (socket) { socket.onclose = null; socket.close(); }
     };
-  }, [context?.token, context?.groupToken, gameId]);
+  }, [context?.token, context?.groupToken, gameId, watching]);
+
+  async function joinSeat() {
+    if (!context || sending.current) return;
+    sending.current = true; setPending(true);
+    try { const result = await joinLiveGame(context, gameId); setView(current => !current || result.state.revision >= current.revision ? result.state : current); setError(''); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not take that seat.'); }
+    finally { sending.current = false; setPending(false); }
+  }
 
   async function send(action: SharedAction) {
     if (!context || sending.current) return;
@@ -95,7 +110,8 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     } finally { sending.current = false; setPending(false); }
   }
 
-  if (!view || !context) return { table: null as Table | null, error, pending };
+  const spectate = () => { setError(''); setCanSpectate(false); setWatching(true); };
+  if (!view || !context) return { table: null as Table | null, error, pending, canSpectate, spectate };
   const canonical = (visual: number) => (view.seatIndex + visual) % 4;
   const memberList = view.seats.filter((player): player is NonNullable<typeof player> => player !== null).map(player => ({ ...player, wins: view.wins[player.id] ?? 0 }));
   const table: Table = {
@@ -109,6 +125,7 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     bids: view.bids, highestBid: view.highestBid, biddingBusy: view.biddingBusy,
     breakTrump: view.breakTrump, reshuffleEnabled: view.reshuffleEnabled, reshuffleThreshold: view.reshuffleThreshold,
     shuffling: view.shuffling, shuffleReveal: view.shuffleReveal, canReshuffle: view.canReshuffle,
+    spectating: view.spectating, spectatorHands: view.spectatorHands, joinSeat: () => { void joinSeat(); },
     revealedHands: view.revealedHands, goal: view.goal, outcome: view.outcome, validIds: view.validIds, ready: view.ready, notice: view.notice,
     callPartner: (card: Card) => { void send({ type: 'partner', card }); },
     placeBid: bid => { void send({ type: 'bid', bid }); },
@@ -128,5 +145,5 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     setReshuffleThreshold: threshold => { void send({ type: 'reshuffleSetting', enabled: view.reshuffleEnabled, threshold }); },
     requestReshuffle: () => { void send({ type: 'reshuffle' }); },
   };
-  return { table, error, pending };
+  return { table, error, pending, canSpectate, spectate };
 }

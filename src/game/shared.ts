@@ -53,8 +53,8 @@ export type SharedAction =
   | { type: 'reshuffle' }
   | { type: 'restart' };
 
-export class GameActionError extends Error {}
-const invalid = (message: string): never => { throw new GameActionError(message); };
+export class GameActionError extends Error { constructor(message: string, readonly code?: 'started') { super(message); } }
+const invalid = (message: string, code?: 'started'): never => { throw new GameActionError(message, code); };
 const emptyHands = (): Card[][] => [[], [], [], []];
 const defaultBid: Bid = { level: 1, suit: 'clubs' };
 const defaultPartner: Card = { id: 'A-clubs', rank: 'A', suit: 'clubs' };
@@ -79,6 +79,8 @@ function playerSeat(game: SharedGame, userId: string) { return game.seats.findIn
 function dealerSeat(game: SharedGame) { return playerSeat(game, game.dealerId); }
 function assertDealer(game: SharedGame, userId: string) { if (game.dealerId !== userId) invalid('Only the dealer can do that.'); }
 function assertWaiting(game: SharedGame) { if (game.phase !== 'waiting') invalid('The game has already started.'); }
+// A seat can be taken in the lobby, or after a round while its result is still on screen.
+function assertJoinable(game: SharedGame) { if (game.phase !== 'waiting' && game.phase !== 'ended') invalid('The game has already started.', 'started'); }
 
 export function advanceSharedGame(game: SharedGame, now: number): SharedGame {
   if (game.dueAt === null || now < game.dueAt) return game;
@@ -106,7 +108,7 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
   if (action.type === 'join') {
     if (action.player.id !== userId) invalid('Player identity mismatch.');
     if (own >= 0) return game;
-    assertWaiting(game);
+    assertJoinable(game);
     const seat = game.seats.findIndex(player => player === null);
     if (seat < 0) invalid('This game is full.');
     const seats = [...game.seats]; seats[seat] = action.player;
@@ -119,7 +121,10 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
     if (!Number.isInteger(target) || target < 0 || target > 3 || target === dealerSeat(game) && action.type === 'kick' || !game.seats[target]) invalid('Cannot remove that player.');
     const seats = [...game.seats]; const removed = seats[target]!; seats[target] = null;
     const nextDealer = removed.id === game.dealerId ? [1, 2, 3].map(offset => seats[(target + offset) % 4]).find(Boolean)?.id ?? '' : game.dealerId;
-    return { ...lobby({ ...game, seats, dealerId: nextDealer }), notice: `${removed.username} ${action.type === 'quit' ? 'left' : 'was kicked'}. Round forfeited.`, updatedAt: now };
+    const verb = action.type === 'quit' ? 'left' : 'was kicked';
+    // The result is already counted, so the table keeps it on screen with the seat open.
+    if (game.phase === 'ended') return { ...game, seats, hands: game.hands.map((hand, seat) => seat === target ? [] : hand), dealerId: nextDealer, notice: `${removed.username} ${verb}.`, updatedAt: now };
+    return { ...lobby({ ...game, seats, dealerId: nextDealer }), notice: `${removed.username} ${verb}. Round forfeited.`, updatedAt: now };
   }
   if (action.type === 'swap') {
     assertDealer(game, userId); assertWaiting(game);
@@ -174,6 +179,7 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
   }
   if (action.type === 'restart') {
     if (game.phase !== 'ended') invalid('The round is not over.');
+    if (!game.seats.every(Boolean)) invalid('Four players must join before the next round.');
     const nextDealer = game.seats[(dealerSeat(game) + 1) % 4]?.id ?? game.dealerId;
     return { ...lobby({ ...game, dealerId: nextDealer, round: game.round + 1 }), notice: '', updatedAt: now };
   }
@@ -181,13 +187,14 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
 }
 
 export function sharedView(game: SharedGame, userId: string) {
-  const own = playerSeat(game, userId);
-  if (own < 0) invalid('Join this game first.');
+  // Someone without a seat watches from the first seat's point of view and sees every hand.
+  const spectating = playerSeat(game, userId) < 0;
+  const own = spectating ? 0 : playerSeat(game, userId);
   const seat = (index: number) => (index + own) % 4;
   const rotate = <T,>(items: T[]) => [0, 1, 2, 3].map(index => items[seat(index)]);
   const active = game.phase === 'bidding' ? game.auction.turn : game.playTurn;
-  const cards = game.hands[own];
-  const validIds = game.phase === 'playing' && game.trickStatus === 'playing' ? legalCards(cards, game.plays, { trump: game.bid.suit, breakTrump: game.breakTrump, trumpBroken: game.trumpBroken }).map(card => card.id) : [];
+  const cards = spectating ? [] : game.hands[own];
+  const validIds = !spectating && game.phase === 'playing' && game.trickStatus === 'playing' ? legalCards(cards, game.plays, { trump: game.bid.suit, breakTrump: game.breakTrump, trumpBroken: game.trumpBroken }).map(card => card.id) : [];
   return {
     id: game.id, version: game.version, revision: game.revision, phase: game.phase, seatIndex: own, seats: rotate(game.seats), dealerId: game.dealerId,
     round: game.round, bid: game.bid, declarer: relativeSeat(game.declarer, own), partner: game.partner, announcementUntil: game.announcementUntil,
@@ -199,11 +206,12 @@ export function sharedView(game: SharedGame, userId: string) {
     shuffling: game.shuffleStage !== null, shuffleReveal: game.shuffleStage === 'reveal',
     notice: game.notice, wins: game.wins, games: game.games, validIds,
     ready: game.seats.every(Boolean), isDealer: game.dealerId === userId,
-    canReshuffle: game.phase === 'bidding' && !game.shuffleStage && game.bids[own] === null && game.reshuffleEnabled && handStrength(cards) < game.reshuffleThreshold,
+    canReshuffle: !spectating && game.phase === 'bidding' && !game.shuffleStage && game.bids[own] === null && game.reshuffleEnabled && handStrength(cards) < game.reshuffleThreshold,
     goal: targets(game.bid.level), outcome: roundOutcome(game.counts, game.declarer, game.partnerSeat, game.bid.level),
-    biddingBusy: game.phase !== 'bidding' || game.auction.turn !== own || game.shuffleStage !== null,
+    biddingBusy: spectating || game.phase !== 'bidding' || game.auction.turn !== own || game.shuffleStage !== null,
     declarerHand: game.declarer === own ? cards : [],
     // Hands stay private until the round is over, then everyone sees what was left.
+    spectating, spectatorHands: spectating ? rotate(game.hands).map(hand => sortCards(hand)) : null,
     revealedHands: game.phase === 'ended' ? rotate(game.hands).map(hand => sortCards(hand)) : null,
   };
 }

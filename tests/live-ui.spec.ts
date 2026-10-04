@@ -44,3 +44,32 @@ test('Telegram connection shows only the four-suit slideshow', async ({ page }) 
   finishConnection();
   await expect(page.getByRole('button', { name: 'Create game', exact: true })).toBeVisible();
 });
+
+async function openAsStranger(page: import('@playwright/test').Page, shown: ReturnType<typeof newSharedGame>) {
+  await page.route('https://telegram.org/js/telegram-web-app.js?63', route => route.fulfill({ contentType: 'application/javascript', body: 'window.Telegram={WebApp:{initData:"signed-test-launch",ready(){},expand(){}}};' }));
+  await page.route('**/api/context', route => route.fulfill({ json: { token: 'test-session', user: { id: 9, first_name: 'Watcher' }, groupToken: 'test-group', startGameId: id, resumeId: null } }));
+  await page.route(`**/api/games/${id}/join`, route => route.fulfill({ status: 409, json: { error: 'The game has already started.', spectate: true } }));
+  await page.route(`**/api/games/${id}`, route => route.fulfill({ json: { state: sharedView(shown, '9') } }));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+}
+
+test('a late arrival can spectate and look at a player\'s cards', async ({ page }) => {
+  const started = applySharedAction(game, players[0].id, { type: 'start' }, 1002);
+  await openAsStranger(page, started);
+  await expect(page.getByRole('alert')).toContainText('The game has already started.');
+  await page.getByRole('button', { name: 'Spectate', exact: true }).click();
+  await expect(page.getByText(/Spectating/)).toBeVisible();
+  await expect(page.locator('.minimal-hand')).toHaveCount(0);
+  await page.getByRole('button', { name: "See @live2's cards" }).click();
+  await expect(page.locator('.peek-hand .playing-card')).toHaveCount(13);
+  await page.getByRole('button', { name: "See @live2's cards" }).click();
+  await expect(page.locator('.peek-hand')).toHaveCount(0);
+});
+
+test('a seat left open after a round can be joined', async ({ page }) => {
+  const ended = applySharedAction({ ...applySharedAction(game, players[0].id, { type: 'start' }, 1002), phase: 'ended' }, players[2].id, { type: 'quit' }, 1003);
+  await openAsStranger(page, ended);
+  await page.getByRole('button', { name: 'Spectate', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Join this seat' })).toBeEnabled();
+  await expect(page.locator('.remaining-row')).toHaveCount(3);
+});

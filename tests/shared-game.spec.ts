@@ -63,3 +63,34 @@ test('a reshuffle announcement and animation state reach every player', () => {
     expect(view.notice).toBe('@two requested a reshuffle');
   }
 });
+
+test('someone without a seat can watch, and a seat opened after a round can be taken', () => {
+  let now = 100_000;
+  const watcher: SharedPlayer = { id: 'five', username: '@five', initials: '5' };
+  let game = newSharedGame('game-2', -1001234, players[0], { breakTrump: false, reshuffleEnabled: false, reshuffleThreshold: 4 }, now);
+  for (const player of players.slice(1)) game = applySharedAction(game, player.id, { type: 'join', player }, ++now);
+  game = applySharedAction(game, players[0].id, { type: 'start' }, ++now);
+
+  const seen = sharedView(game, watcher.id);
+  expect(seen.spectating).toBe(true);
+  expect(seen.cards).toEqual([]);
+  expect(seen.validIds).toEqual([]);
+  expect(seen.spectatorHands!.map(hand => hand.length)).toEqual([13, 13, 13, 13]);
+  expect(sharedView(game, players[0].id).spectatorHands).toBeNull();
+  let error: unknown;
+  try { applySharedAction(game, watcher.id, { type: 'join', player: watcher }, ++now); } catch (reason) { error = reason; }
+  expect(error).toMatchObject({ message: 'The game has already started.', code: 'started' });
+
+  game = { ...game, phase: 'ended', hands: game.hands.map(hand => hand.slice(0, 3)) };
+  game = applySharedAction(game, players[2].id, { type: 'quit' }, ++now);
+  expect(game.phase).toBe('ended');
+  expect(game.hands[2]).toEqual([]);
+  expect(game.hands[1]).toHaveLength(3);
+  expect(() => applySharedAction(game, players[0].id, { type: 'restart' }, ++now)).toThrow('Four players must join');
+
+  game = applySharedAction(game, watcher.id, { type: 'join', player: watcher }, ++now);
+  expect(game.seats[2]?.id).toBe(watcher.id);
+  expect(sharedView(game, watcher.id).spectating).toBe(false);
+  game = applySharedAction(game, players[0].id, { type: 'restart' }, ++now);
+  expect(game.phase).toBe('waiting');
+});

@@ -1218,3 +1218,13 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
 .simple-app.on-game .lobby-actions:has(.end-summary) { grid-template-rows: 40px 56px; }
 .simple-app.on-game .round-settings:has(.end-summary) { grid-template-rows: minmax(0, 1fr); }
 .simple-app.on-game .round-settings .end-summary { grid-row: 1; }
+/* Spectators: a short label, the tapped player's cards, and a Join button on an open seat. */
+.spectating-note { position: absolute; z-index: 7; top: 66px; left: 20px; right: 20px; margin: 0; text-align: center; font-size: 11px; font-weight: 750; color: var(--text-secondary); pointer-events: none; }
+.peek-name { margin: 0 0 4px; text-align: center; font-size: 14px; font-weight: 800; }
+.peek-empty { margin: 0; text-align: center; font-size: 13px; color: var(--text-secondary); }
+.peek-hand .playing-card { pointer-events: none; }
+.simple-app .minimal-table.live-notice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; width: 100%; max-width: 430px; height: auto; min-height: 100dvh; margin: 0 auto; padding: 24px; text-align: center; }
+.live-notice .live-loading { margin: 0; padding: 0; }
+.live-notice-actions { display: flex; flex-direction: column; gap: 12px; width: min(100%, 300px); }
+.live-notice-actions .btn { width: 100%; }
+.empty-seat > button:not(:disabled) { cursor: pointer; font-size: 14px; font-weight: 800; color: var(--text); }

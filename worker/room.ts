@@ -4,7 +4,7 @@ import { verifySession, type GameSession } from './telegram';
 interface RoomEnv { LINK_SECRET: string }
 interface Scores { player: SharedPlayer; wins: number; games: number }
 interface SocketAuth { type: 'auth'; token: string; gameId: string }
-interface Attachment { gameId: string; userId: string }
+interface Attachment { gameId: string; userId: string; role?: 'player' | 'spectator' }
 
 const answer = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
 const gameKey = (id: string) => `game:${id}`;
@@ -45,7 +45,11 @@ export class GroupRoom {
     for (const socket of this.ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment() as Attachment | null;
       if (attachment?.gameId !== game.id) continue;
-      if (game.seats.some(player => player?.id === attachment.userId)) this.sendState(game, attachment.userId, socket);
+      if (game.seats.some(player => player?.id === attachment.userId)) {
+        // A spectator who took a seat becomes a player here, and is told if they are removed later.
+        if (attachment.role !== 'player') socket.serializeAttachment({ ...attachment, role: 'player' } satisfies Attachment);
+        this.sendState(game, attachment.userId, socket);
+      } else if (attachment.role === 'spectator') this.sendState(game, attachment.userId, socket);
       else { try { socket.send(JSON.stringify({ type: 'removed' })); socket.close(1000, 'Left game'); } catch { /* Closed already. */ } }
     }
   }
@@ -143,7 +147,7 @@ export class GroupRoom {
         }
         return answer({ error: 'Not found' }, 404);
       } catch (error) {
-        if (error instanceof GameActionError) return answer({ error: error.message }, 409);
+        if (error instanceof GameActionError) return answer({ error: error.message, ...(error.code === 'started' ? { spectate: true } : {}) }, 409);
         console.error(error instanceof Error ? error.message : 'Room failed');
         return answer({ error: 'Game unavailable' }, 503);
       }
@@ -158,8 +162,10 @@ export class GroupRoom {
       if (message.type !== 'auth' || typeof message.token !== 'string' || typeof message.gameId !== 'string') { socket.close(1008, 'Unauthorized'); return; }
       const session = await verifySession(message.token, this.env.LINK_SECRET);
       const game = await this.fresh(message.gameId);
-      if (!session || !game || session.chatId !== game.groupId || !game.seats.some(player => player?.id === String(session.user.id))) { socket.close(1008, 'Unauthorized'); return; }
-      socket.serializeAttachment({ gameId: game.id, userId: String(session.user.id) } satisfies Attachment);
+      if (!session || !game || session.chatId !== game.groupId) { socket.close(1008, 'Unauthorized'); return; }
+      // Any member of the group may watch; being seated decides which view they get.
+      const seated = game.seats.some(player => player?.id === String(session.user.id));
+      socket.serializeAttachment({ gameId: game.id, userId: String(session.user.id), role: seated ? 'player' : 'spectator' } satisfies Attachment);
       this.sendState(game, String(session.user.id), socket);
     });
   }

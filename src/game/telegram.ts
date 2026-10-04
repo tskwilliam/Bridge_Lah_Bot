@@ -20,8 +20,8 @@ export interface LeaderboardRecord { player: SharedPlayer; wins: number; games: 
 export function inTelegram() { return Boolean(window.Telegram?.WebApp?.initData); }
 
 async function unpack<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error ?? `Request failed (${response.status})`);
+  const data = await response.json().catch(() => ({})) as T & { error?: string; spectate?: boolean };
+  if (!response.ok) throw Object.assign(new Error(data.error ?? `Request failed (${response.status})`), { spectate: data.spectate === true });
   return data;
 }
 
