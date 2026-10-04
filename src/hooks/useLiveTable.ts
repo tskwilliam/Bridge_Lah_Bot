@@ -20,21 +20,37 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     let removed = false;
     let socket: WebSocket | null = null;
     let retry: number | undefined;
+    let failures = 0;
+    let heardAt = Date.now();
     const update = (state: SharedGameView) => setView(current => !current || state.revision >= current.revision ? state : current);
     const connect = () => {
       if (!active || removed) return;
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${scheme}//${location.host}/api/live?group=${encodeURIComponent(context.groupToken)}`);
-      socket.onopen = () => socket?.send(JSON.stringify({ type: 'auth', token: context.token, gameId }));
-      socket.onmessage = event => {
+      const current = new WebSocket(`${scheme}//${location.host}/api/live?group=${encodeURIComponent(context.groupToken)}`);
+      socket = current;
+      heardAt = Date.now();
+      current.onopen = () => { failures = 0; current.send(JSON.stringify({ type: 'auth', token: context.token, gameId })); };
+      current.onmessage = event => {
+        heardAt = Date.now();
+        if (event.data === 'pong') return;
         try {
           const message = JSON.parse(event.data) as { type: string; state?: SharedGameView };
           if (!active) return;
           if (message.type === 'state' && message.state) { update(message.state); setError(''); }
-          if (message.type === 'removed') { removed = true; setView(null); setError('You have left this game.'); socket?.close(); }
+          if (message.type === 'removed') { removed = true; setView(null); setError('You have left this game.'); current.close(); }
         } catch { /* Ignore malformed connection messages. */ }
       };
-      socket.onclose = () => { if (active && !removed) retry = window.setTimeout(connect, 1800); };
+      current.onclose = () => { if (active && !removed && socket === current) retry = window.setTimeout(connect, Math.min(300 * 2 ** failures++, 3000)); };
+    };
+    // A phone that slept leaves the socket looking open while nothing arrives, so drop it and start again.
+    const reconnect = () => {
+      if (!active || removed) return;
+      if (retry) clearTimeout(retry);
+      const old = socket;
+      socket = null;
+      if (old) { old.onclose = null; old.close(); }
+      failures = 0;
+      connect();
     };
     joinLiveGame(context, gameId).then(result => {
       if (!active) return;
@@ -43,9 +59,21 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     const resume = () => {
       if (!active || removed || document.visibilityState !== 'visible') return;
       liveGame(context, gameId).then(result => { if (active) update(result.state); }).catch(() => undefined);
+      if (!socket || socket.readyState !== WebSocket.OPEN || Date.now() - heardAt > 20000) reconnect();
     };
+    const beat = window.setInterval(() => {
+      if (!active || removed || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - heardAt > 20000) { reconnect(); return; }
+      try { socket.send('ping'); } catch { reconnect(); }
+    }, 8000);
     document.addEventListener('visibilitychange', resume);
-    return () => { active = false; document.removeEventListener('visibilitychange', resume); if (retry) clearTimeout(retry); socket?.close(); };
+    window.addEventListener('online', resume);
+    window.addEventListener('focus', resume);
+    return () => {
+      active = false; clearInterval(beat); if (retry) clearTimeout(retry);
+      document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('focus', resume);
+      if (socket) { socket.onclose = null; socket.close(); }
+    };
   }, [context?.token, context?.groupToken, gameId]);
 
   async function send(action: SharedAction) {

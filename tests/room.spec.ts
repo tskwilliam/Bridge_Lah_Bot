@@ -18,7 +18,8 @@ function testRoom() {
     setAlarm: async () => undefined,
     deleteAlarm: async () => undefined,
   };
-  const ctx = { storage, getWebSockets: () => [] } as unknown as ConstructorParameters<typeof GroupRoom>[0];
+  Object.assign(globalThis, { WebSocketRequestResponsePair: class { constructor(public request: string, public response: string) {} } });
+  const ctx = { storage, getWebSockets: () => [], setWebSocketAutoResponse: () => undefined } as unknown as ConstructorParameters<typeof GroupRoom>[0];
   const room = new GroupRoom(ctx, { LINK_SECRET: 'test-only-secret' });
   const call = async (path: string, user: number, extra: object = {}) => {
     const response = await room.fetch(new Request(`https://room.internal${path}`, { method: 'POST', body: JSON.stringify({ session: session(user), ...extra }) }));

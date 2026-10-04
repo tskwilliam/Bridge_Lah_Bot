@@ -13,7 +13,10 @@ const scoreKey = (id: string) => `score:${id}`;
 
 export class GroupRoom {
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(private ctx: DurableObjectState, private env: RoomEnv) {}
+  constructor(private ctx: DurableObjectState, private env: RoomEnv) {
+    // Heartbeats are answered without waking the room, so clients can tell a dead connection from a quiet one.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+  }
 
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const result = this.queue.then(work);
@@ -51,6 +54,8 @@ export class GroupRoom {
     const saved = { ...game, revision: (previous?.revision ?? -1) + 1 };
     if (saved.seats.every(player => !player)) await this.ctx.storage.delete(gameKey(saved.id));
     else await this.ctx.storage.put(gameKey(saved.id), saved);
+    // Players see the move as soon as it is stored; scores and the alarm are bookkeeping.
+    this.broadcast(saved);
     if (previous) for (const player of previous.seats) {
       if (!player) continue;
       const extraGames = (game.games[player.id] ?? 0) - (previous.games[player.id] ?? 0);
@@ -60,7 +65,6 @@ export class GroupRoom {
       await this.ctx.storage.put(scoreKey(player.id), { player, wins: record.wins + extraWins, games: record.games + extraGames });
     }
     await this.schedule();
-    this.broadcast(saved);
     return saved;
   }
 
