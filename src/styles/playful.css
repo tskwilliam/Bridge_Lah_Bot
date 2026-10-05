@@ -970,6 +970,8 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
 }
 .simple-app.on-game .circle-stage .seat-username {
   flex: none;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--ink), 2px 2px 0 var(--ink);
   max-width: 160px;
   overflow: hidden;
   white-space: nowrap;
