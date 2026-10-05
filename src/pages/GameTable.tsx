@@ -24,12 +24,15 @@ const tableLayout = { centerX: 210, centerY: 195, radiusX: 160, radiusY: 183 };
 // Landscape reserves the bottom trick pile even before play; usernames do not
 // determine the table bounds or move the table between phases.
 const landscapeVerticalBounds = { top: 8, bottom: 404 };
+// Include the side kick buttons and labels when expanding the desktop table.
+const desktopTableWidth = 366;
 
 export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }: { gameId: string; initialPhase: GamePhase; embedded: boolean; host: boolean; onHome: () => void; live?: LiveContext }) {
   const preview = useTablePreview(gameId, initialPhase, embedded || !!live);
   const remote = useLiveTable(gameId, live, preview);
   const table = live ? remote.table ?? preview : preview;
   const loading = Boolean(live && !remote.table);
+  const desktop = ['tdesktop', 'macos'].includes(window.Telegram?.WebApp?.platform ?? '');
   const [swapFrom, setSwapFrom] = useState<number | null>(null);
   const [fillAt, setFillAt] = useState<number | null>(null);
   const [suitFrame, setSuitFrame] = useState(0);
@@ -61,13 +64,14 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
       let groupSize: number;
       if (landscape) {
         const columnWidth = (Math.min(width - 40, 960) - 20) / 2;
-        groupSize = Math.max(32, Math.min(columnWidth * 420 / (tableLayout.radiusX * 2), (height - 40) * 420 / (landscapeVerticalBounds.bottom - landscapeVerticalBounds.top)));
+        groupSize = Math.max(32, Math.min(columnWidth * 420 / (desktop ? desktopTableWidth : tableLayout.radiusX * 2), (height - 40) * 420 / (landscapeVerticalBounds.bottom - landscapeVerticalBounds.top)));
         const scale = groupSize / 420;
         frame.style.setProperty('--group-left', `${20 + columnWidth / 2 - tableLayout.centerX * groupSize / 420}px`);
         frame.style.setProperty('--group-top', `${Math.min(height / 2 - tableLayout.centerY * scale, height - 20 - landscapeVerticalBounds.bottom * scale)}px`);
         frame.style.setProperty('--score-top', `${(height - handHeight) / 2 - 52}px`);
       } else {
-        const bottomMargin = 50;
+        const bottomMargin = desktop ? Math.min(50, Math.max(10, (height - 420) * .12)) : 50;
+        frame.style.setProperty('--bottom-margin', `${bottomMargin}px`);
         const handTop = height - bottomMargin - handHeight;
         const scoreTop = handTop - 52;
         // The hand and score are the shared lower limit in every phase.
@@ -77,16 +81,60 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
         frame.style.setProperty('--group-top', `${(64 + lowerBoundary) / 2 - tableLayout.centerY * groupSize / 420}px`);
         frame.style.setProperty('--bottom-margin', `${bottomMargin}px`);
         frame.style.setProperty('--score-top', `${scoreTop}px`);
+        if (desktop) {
+          // Fit the full seat envelope into the actual free space. In the lobby
+          // there is no hand/score to reserve; during play keep room for both.
+          const bottom = frame.querySelector<HTMLElement>('.table-bottom');
+          const upper = 84;
+          const lower = (bottom ? bottom.offsetTop : height - bottomMargin) - (inPlay ? 72 : 20);
+          const available = Math.max(32, lower - upper);
+          groupSize = Math.max(32, Math.min((width - 40) * 420 / desktopTableWidth, available * 420 / 396));
+          const scale = groupSize / 420;
+          frame.style.setProperty('--group-left', `${width / 2 - tableLayout.centerX * scale}px`);
+          frame.style.setProperty('--group-top', `${upper + (available - 396 * scale) / 2 - 8 * scale}px`);
+          if (inPlay && bottom) frame.style.setProperty('--score-top', `${bottom.offsetTop - 52}px`);
+        }
       }
       frame.style.setProperty('--group-size', `${groupSize}px`);
       frame.style.setProperty('--group-scale', String(groupSize / 420));
       frame.style.setProperty('--hand-height', `${handHeight}px`);
+      if (table.phase === 'ended') {
+        const summary = frame.querySelector<HTMLElement>('.round-result');
+        const summaryBottom = summary ? summary.offsetTop + summary.offsetHeight : 64;
+        frame.style.setProperty('--result-bottom', `${summaryBottom}px`);
+        const upper = Math.max(84, summaryBottom + 12 + (table.spectators.length ? 28 : 0));
+        const bottom = frame.querySelector<HTMLElement>('.table-bottom');
+        const lower = landscape ? height - 20 : (bottom?.offsetTop ?? height - 50) - 16;
+        const columnWidth = landscape ? (Math.min(width - 40, 960) - 20) / 2 : width - 40;
+        const scale = Math.max(.08, Math.min(columnWidth / desktopTableWidth, (lower - upper) / 396));
+        frame.style.setProperty('--group-size', `${420 * scale}px`);
+        frame.style.setProperty('--group-scale', String(scale));
+        frame.style.setProperty('--group-left', `${(landscape ? 20 + columnWidth / 2 : width / 2) - tableLayout.centerX * scale}px`);
+        frame.style.setProperty('--group-top', `${upper + (lower - upper - 396 * scale) / 2 - 8 * scale}px`);
+      }
+      if (desktop) {
+        // Leave breathing room around the complete group (seats and trick piles
+        // included), especially beside the hand in a wide desktop window.
+        const fittedSize = parseFloat(frame.style.getPropertyValue('--group-size'));
+        const paddedSize = Math.min(460, fittedSize * .86);
+        const insetScale = (fittedSize - paddedSize) / 420;
+        const left = parseFloat(frame.style.getPropertyValue('--group-left'));
+        const top = parseFloat(frame.style.getPropertyValue('--group-top'));
+        frame.style.setProperty('--group-left', `${left + tableLayout.centerX * insetScale}px`);
+        frame.style.setProperty('--group-top', `${top + (landscapeVerticalBounds.top + landscapeVerticalBounds.bottom) / 2 * insetScale}px`);
+        frame.style.setProperty('--group-size', `${paddedSize}px`);
+        frame.style.setProperty('--group-scale', String(paddedSize / 420));
+      }
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(frame);
+    const bottom = frame.querySelector('.table-bottom');
+    if ((desktop || table.phase === 'ended') && bottom) observer.observe(bottom);
+    const summary = frame.querySelector('.round-result');
+    if (summary) observer.observe(summary);
     return () => observer.disconnect();
-  }, [loading]);
+  }, [loading, desktop, desktop ? table.phase : table.phase === 'ended', desktop ? spectating : null, table.spectators.length]);
   useEffect(() => {
     const until = table.announcementUntil;
     if (table.phase !== 'playing' || !until || until + 350 <= Date.now()) { setAnnouncementVisible(false); setAnnouncementLeaving(false); return; }
@@ -103,16 +151,18 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
   }, [waiting]);
   function swap(index: number) { if (!canManage || index === 0) return; if (swapFrom === null) setSwapFrom(index); else { table.swapSeats(swapFrom, index); setSwapFrom(null); } }
   if (live && !remote.table) return remote.error ? <main className="minimal-table live-notice"><p role="alert" className="live-loading">{remote.error}</p><div className="live-notice-actions">{remote.canSpectate && <Button onClick={remote.spectate}>Spectate</Button>}<Button variant={remote.canSpectate ? 'secondary' : 'primary'} onClick={onHome}>Back home</Button></div></main> : <SuitLoader/>;
-  return <main ref={layoutRef} className="minimal-table" data-phase={table.phase}>
+  return <main ref={layoutRef} className="minimal-table" data-phase={table.phase} data-desktop={desktop || undefined}>
     <header className="table-header"><button className="table-icon" aria-label="Back home" onClick={onHome}><Icon name="back" size={24}/></button><div className="table-title">{afterBidding ? <><BidLabel bid={table.bid}/><span className="header-divider">·</span>{table.phase === 'partner' ? 'Call partner' : <span className="bid-label" aria-label={`Partner ${table.partner.rank} ${table.partner.suit}`}>{table.partner.rank}<SuitIcon suit={table.partner.suit}/></span>}</> : table.phase === 'bidding' ? 'Place your bid' : `Game ${table.round}`}</div><button className="table-icon" aria-label="Quit" title="Quit game" onClick={() => { if (!spectating) table.quit(); onHome(); }}><Icon name="quit" size={24}/></button></header>
       {table.spectators.length > 0 && <div className="viewers-row" role="status" aria-label={`Watching: ${table.spectators.map(person => person.username).join(', ')}`}><Icon name="eye" size={16}/><span className="viewers-avatars">{table.spectators.slice(0, 5).map(person => <MemberAvatar key={person.id} member={{ ...person, wins: 0 }}/>)}</span>{table.spectators.length > 5 && <b>+{table.spectators.length - 5}</b>}</div>}
+    {table.phase === 'ended' && <p className="round-result" role="status">{table.winnerNames.join(' & ')} win</p>}
+    {live && remote.error && <div className="table-error" role="alert"><span>{remote.error}</span>{remote.canRetry && <button onClick={remote.retry} disabled={remote.pending}>Retry</button>}<button aria-label="Dismiss error" onClick={remote.dismissError}><Icon name="close" size={16}/></button></div>}
     <div className="table-group-frame"><div className="table-group-canvas"><section className="circle-stage" aria-label="Four players around the table">
       <div className="play-orbit" aria-hidden="true"/>
       {(inPlay || table.phase === 'bidding') && <div className="turn-track" aria-hidden="true" style={{ '--turn-angle': `${table.active * 90}deg` } as CSSProperties}><svg viewBox="0 0 100 100" preserveAspectRatio="none"><circle cx="50" cy="50" r="49"/></svg></div>}
       {seated.map((member, index) => member ? <TableSeat key={member.id} member={member} position={positions[index]} active={(inPlay || table.phase === 'bidding') && table.active === index && table.trickStatus === 'playing'} dealer={member.id === table.dealerId} crowned={afterBidding && table.declarer === index} round={table.round} tricks={table.counts[index]} showTricks={inPlay} editable={canManage && index !== 0} removable={table.isDealer && index !== 0} wins={table.wins[member.id] ?? 0} showWins={waiting || table.phase === 'ended'} celebrating={table.phase === 'ended' && winnerSeats.includes(index)} chosen={swapFrom === index} onSwap={() => swap(index)} onRemove={() => { setSwapFrom(null); table.removeSeat(index); }} onPeek={canPeek ? () => setPeek(current => current === index ? null : index) : undefined} bid={table.phase === 'bidding' ? table.bids[index] : undefined}/> : <div key={`empty-${index}`} data-seat={positions[index]} className={`circle-seat position-${positions[index]} empty-seat`}><button aria-label={canTakeSeat ? 'Join this seat' : `Fill ${positions[index]} seat`} disabled={!canFill && !canTakeSeat} onClick={() => { if (canTakeSeat) table.joinSeat(); else if (swapFrom !== null) swap(index); else setFillAt(index); }}>{canTakeSeat ? 'Join' : '+'}</button></div>)}
       <div className="table-center">
         {waiting && <div className="center-message lobby-center"><span key={suitFrame} className="centre-suit-slide"><SuitIcon suit={suits[suitFrame]}/></span></div>}
-        {table.phase === 'bidding' && (table.shuffling ? <div className="center-message reshuffle-table-message" role="status"><span className="reshuffle-requester">{reshuffleRequester}</span>{' '}<span>requested a reshuffle</span></div> : <div className="center-message"><span key={`${table.highestBid?.level}-${table.highestBid?.suit}`} className="centre-bid-suit"><b>{table.highestBid?.level ?? 1}</b>{table.highestBid?.suit === 'no-trump' ? <span>NT</span> : <SuitIcon suit={table.highestBid?.suit ?? 'clubs'}/>}</span><p className="bid-turn-message"><span>{seated[table.active]?.username}</span>{' '}<span>to bid</span></p></div>)}
+        {table.phase === 'bidding' && (table.starting ? <div className={`start-announcement${table.shuffleReveal ? ' is-leaving' : ''}`} role="status">Start!</div> : table.shuffling ? <div className="center-message reshuffle-table-message" role="status"><span className="reshuffle-requester">{reshuffleRequester}</span>{' '}<span>requested a reshuffle</span></div> : <div className="center-message bidding-message"><span key={`${table.highestBid?.level}-${table.highestBid?.suit}`} className="centre-bid-suit"><b>{table.highestBid?.level ?? 1}</b>{table.highestBid?.suit === 'no-trump' ? <span>NT</span> : <SuitIcon suit={table.highestBid?.suit ?? 'clubs'}/>}</span><p className="bid-turn-message"><span>{seated[table.active]?.username}</span>{' '}<span>to bid</span></p></div>)}
         {table.phase === 'partner' && <div className="center-message"><SuitIcon suit={table.partner.suit}/><h1>Find your pair.</h1></div>}
         {inPlay && table.plays.length === 0 && (announcementVisible ? <div className={`partner-announcement${announcementLeaving ? ' is-leaving' : ''}`} role="status"><span className="partner-spark" aria-hidden="true">✦</span><span className="partner-announcement-card"><img src={`/card-fast/${table.partner.suit}/${table.partner.suit[0]}${table.partner.rank}.webp`} alt={`${table.partner.rank} of ${table.partner.suit}`}/><span className="table-card-rank" aria-hidden="true"><b>{table.partner.rank}</b><SuitIcon suit={table.partner.suit}/></span><span className="table-card-rank card-rank-bottom" aria-hidden="true"><b>{table.partner.rank}</b><SuitIcon suit={table.partner.suit}/></span></span><strong>Partner called</strong></div> : <p className="play-turn-message turn-arrives"><span>{seated[table.active]?.username}</span>{' '}<span>to play</span></p>)}
         {table.phase === 'ended' && <div className="center-message winner-message"><h1>{winnerSeats.includes(0) ? 'Win liao, power lah!' : 'Cannot make it sia...'}</h1></div>}
@@ -123,19 +173,17 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
     <div className="table-bottom">
       {canPeek && peek === null && <p className="peek-hint">Tap a player to see their cards</p>}
       {canPeek && peek !== null && seated[peek] && table.spectatorHands && <div className="minimal-hand peek-hand" aria-label={`${seated[peek]!.username}'s cards`}><p className="peek-name">{seated[peek]!.username}</p>{table.spectatorHands[peek].length ? <div className="hand-area"><Hand cards={table.spectatorHands[peek]} selected={null} onSelect={() => undefined}/></div> : <p className="peek-empty">No cards yet</p>}</div>}
-      {table.phase === 'ended' && table.revealedHands && <div className="remaining-cards" aria-label="Remaining cards">{table.revealedHands.map((hand, index) => seated[index] && <div key={seated[index]!.id} className="remaining-row"><span className="remaining-name">{seated[index]!.username}</span><span className="remaining-hand">{hand.length ? hand.map(card => <span key={card.id} className="remain-card" aria-label={`${card.rank} of ${card.suit}`}><b>{card.rank}</b><SuitIcon suit={card.suit}/></span>) : <i>No cards left</i>}</span></div>)}</div>}
+      {table.phase === 'ended' && table.revealedHands && <div className="remaining-cards" aria-label="Remaining cards">{table.revealedHands.map((hand, index) => seated[index] && <div key={seated[index]!.id} className="remaining-row"><span className="remaining-name">{seated[index]!.username}</span><span className="remaining-hand" style={{ '--remaining-count': Math.max(1, hand.length) } as CSSProperties}>{hand.length ? hand.map((card, cardIndex) => <span key={card.id} className="remain-card" style={{ '--remaining-index': cardIndex } as CSSProperties} aria-label={`${card.rank} of ${card.suit}`} title={`${card.rank} of ${card.suit}`}><b>{card.rank}</b><SuitIcon suit={card.suit}/></span>) : <i>No cards left</i>}</span></div>)}</div>}
       {(waiting || table.phase === 'ended') && !spectating && <div className="lobby-actions">
-        <div className="round-settings">{waiting ? <>
+        {waiting && <div className="round-settings">
           <button className="trump-toggle" type="button" aria-pressed={table.breakTrump} disabled={!table.isDealer} onClick={table.toggleBreakTrump} title="Lead trump only after it wins a trick, or when only trumps remain."><span className="toggle-dot" aria-hidden="true"/>Break trump</button>
           <div className="reshuffle-setting"><button type="button" className="trump-toggle" aria-pressed={table.reshuffleEnabled} disabled={!table.isDealer} onClick={table.toggleReshuffle}><span className="toggle-dot" aria-hidden="true"/>Reshuffle for hand value</button><span className="reshuffle-comparison" aria-label="less than">&lt;</span><select aria-label="Reshuffle threshold" value={table.reshuffleThreshold} disabled={!table.isDealer} onChange={event => table.setReshuffleThreshold(Number(event.target.value))}>{[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value}</option>)}</select></div>
-        </> : <p className="end-summary">{winnerSeats.map(seat => seated[seat]?.username).join(' + ')} win{table.ready ? '' : ' · waiting for a player'}</p>}</div>
+        </div>}
         <Button className="round-action" disabled={(waiting && (!table.ready || (!!live && !table.isDealer))) || (!waiting && !table.ready)} onClick={() => { setSwapFrom(null); if (waiting) table.start(); else table.restart(); }}>{waiting ? (host ? 'Start game' : 'Preview game') : 'Play another round'}</Button>
       </div>}
       {table.phase === 'bidding' && table.canReshuffle && <div className="reshuffle-row"><button className="reshuffle-button" onClick={table.requestReshuffle}>Reshuffle</button></div>}
-      {!spectating && (['bidding', 'partner', 'playing'] as GamePhase[]).includes(table.phase) && <div className="minimal-hand"><div className={`hand-area${table.shuffling && !table.shuffleReveal ? ' is-covering' : ''}`}><Hand cards={table.cards} selected={table.selected} onSelect={table.tapCard} disabled={!inPlay || announcementVisible || table.trickStatus !== 'playing'} playableIds={inPlay ? table.validIds : undefined}/>{table.shuffling && <ShuffleOverlay revealing={table.shuffleReveal}/>}</div></div>}
+      {!spectating && (['bidding', 'partner', 'playing'] as GamePhase[]).includes(table.phase) && <div className="minimal-hand"><div className={`hand-area${table.shuffling && !table.shuffleReveal ? ' is-covering' : ''}${table.shuffleReveal ? ' is-revealing' : ''}`}><Hand cards={table.cards} selected={table.selected} onSelect={table.tapCard} disabled={!inPlay || announcementVisible || table.trickStatus !== 'playing' || remote.pending} playableIds={inPlay ? table.validIds : undefined}/>{table.shuffling && !table.shuffleStart && <ShuffleOverlay revealing={table.shuffleReveal} starting={table.starting}/>}</div></div>}
       {spectating ? null : ['bidding', 'partner'].includes(table.phase) ? <div className="round-control-slot"><TableControls table={table}/></div> : <TableControls table={table}/>}
-      {live && remote.pending && <p role="status" className="live-saving">Saving move…</p>}
-      {live && remote.error && <p role="alert" className="live-error">{remote.error}</p>}
     </div>
     {!live && fillAt !== null && <Modal title="Fill this seat" onClose={() => setFillAt(null)}><p className="muted">Choose a sample player for the preview.</p>{members.filter(member => !table.seats.includes(member.id)).map(member => <Button key={member.id} className="w-full mt-4" onClick={() => { table.fillSeat(fillAt, member.id); setFillAt(null); }}>{member.username}</Button>)}</Modal>}
   </main>;

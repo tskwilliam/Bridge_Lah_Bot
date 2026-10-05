@@ -110,7 +110,7 @@ export class GroupRoom {
       this.ctx.acceptWebSocket(server);
       return new Response(null, { status: 101, webSocket: client });
     }
-    let body: { session: GameSession; id?: string; player?: SharedPlayer; action?: SharedAction };
+    let body: { session: GameSession; id?: string; player?: SharedPlayer; action?: SharedAction; actionId?: string | null; revision?: number };
     try { body = await request.json() as typeof body; } catch { return answer({ error: 'Invalid request' }, 400); }
     if (!body.session || !Number.isSafeInteger(body.session.chatId) || !Number.isSafeInteger(body.session.user?.id)) return answer({ error: 'Unauthorized' }, 401);
     const userId = String(body.session.user.id);
@@ -150,7 +150,18 @@ export class GroupRoom {
         if (path === '/state') return answer({ state: this.view(game, userId) });
         if (path === '/action') {
           if (!body.action || typeof body.action.type !== 'string') return answer({ error: 'Action required' }, 400);
-          const next = applySharedAction(game, userId, body.action, Date.now());
+          if (body.actionId && !/^[a-zA-Z0-9-]{16,80}$/.test(body.actionId)) return answer({ error: 'Invalid action ID' }, 400);
+          const actionText = JSON.stringify(body.action);
+          const receipt = game.actionReceipts?.find(item => item.id === body.actionId && item.userId === userId);
+          if (receipt) {
+            if (receipt.action !== actionText) return answer({ error: 'Action ID already used' }, 409);
+            return answer({ state: game.seats.some(player => player?.id === userId) ? this.view(game, userId) : null });
+          }
+          if (body.revision !== undefined && (!Number.isSafeInteger(body.revision) || body.revision !== game.revision)) return answer({ error: 'The table changed. Please choose your move again.' }, 409);
+          let next = applySharedAction(game, userId, body.action, Date.now());
+          // The receipt and move share a single durable write. Retrying a lost
+          // acknowledgement can never replay a bid, card, swap, or round start.
+          if (body.actionId) next = { ...next, actionReceipts: [...(game.actionReceipts ?? []).slice(-127), { id: body.actionId, userId, action: actionText }] };
           let committed = next;
           if (next !== game) {
             if (body.action.type === 'start') {

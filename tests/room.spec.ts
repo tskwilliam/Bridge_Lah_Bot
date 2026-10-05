@@ -84,3 +84,24 @@ test('a started game offers spectating to other members of the group', async () 
   expect((watching.body.state as unknown as { spectatorHands: unknown[][] }).spectatorHands.map(hand => hand.length)).toEqual([13, 13, 13, 13]);
   expect((await call('/action', 9, { id, action: { type: 'start' } })).status).toBe(409);
 });
+
+test('a lost action response can be retried without applying the move twice', async () => {
+  const { call, values } = testRoom();
+  const id = 'd'.repeat(32);
+  await call('/create', 1, { id, player: players[0] });
+  for (const player of players.slice(1)) await call('/join', Number(player.id), { id, player });
+  const before = await call('/state', 1, { id });
+  const action = { type: 'swap', from: 1, to: 2 };
+  const request = { id, action, actionId: 'retry-the-same-swap', revision: before.body.state!.revision };
+  const first = await call('/action', 1, request);
+  const replay = await call('/action', 1, request);
+  expect(first.status).toBe(200);
+  expect(replay.status).toBe(200);
+  expect(replay.body.state?.revision).toBe(first.body.state?.revision);
+  expect(replay.body.state?.seats.map(player => player?.id)).toEqual(['1', '3', '2', '4']);
+  // A new decision made against that stale revision must not undo the swap.
+  expect((await call('/action', 1, { ...request, actionId: 'different-decision-id' })).status).toBe(409);
+  expect((await call('/action', 1, { ...request, action: { type: 'quit' } })).status).toBe(409);
+  expect(values.get(`game:${id}`)).toHaveProperty('actionReceipts');
+  expect(replay.body.state).not.toHaveProperty('actionReceipts');
+});

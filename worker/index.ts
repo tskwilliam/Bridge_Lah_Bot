@@ -114,7 +114,9 @@ async function handleApi(request: Request, env: Env, url: URL) {
   if (operation === 'join' && request.method === 'POST') return roomCall(env, session.chatId, '/join', { session, id, player: playerFrom(session.user) });
   if (operation === 'actions' && request.method === 'POST') {
     const action = await request.json() as SharedAction;
-    return roomCall(env, session.chatId, '/action', { session, id, action });
+    const actionId = request.headers.get('X-Action-ID');
+    const revision = request.headers.get('X-Game-Revision');
+    return roomCall(env, session.chatId, '/action', { session, id, action, actionId, ...(revision === null ? {} : { revision: Number(revision) }) });
   }
   return json({ error: 'Not found' }, 404);
 }

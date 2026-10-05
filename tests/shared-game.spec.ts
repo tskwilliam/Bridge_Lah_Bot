@@ -13,6 +13,10 @@ test('one server deal gives four private hands and one clockwise trick', () => {
   expect(game.auction.turn).toBe(1);
   expect(game.hands.map(hand => hand.length)).toEqual([13, 13, 13, 13]);
   expect(new Set(game.hands.flat().map(card => card.id)).size).toBe(52);
+  expect(sharedView(game, players[0].id).shuffleStart).toBe(true);
+  expect(sharedView(game, players[0].id).biddingBusy).toBe(true);
+  expect(() => applySharedAction(game, players[1].id, { type: 'bid', bid: null }, now)).toThrow('not your turn');
+  while (game.shuffleStage) { now = game.dueAt!; game = advanceSharedGame(game, now); }
   for (let seat = 0; seat < 4; seat++) {
     const view = sharedView(game, players[seat].id);
     expect(view.seats[0]?.id).toBe(players[seat].id);
@@ -53,6 +57,7 @@ test('a reshuffle announcement and animation state reach every player', () => {
   for (const player of players.slice(1)) game = applySharedAction(game, player.id, { type: 'join', player }, ++now);
   game = applySharedAction(game, players[0].id, { type: 'start' }, ++now);
   const deck = game.hands.flat();
+  while (game.shuffleStage) { now = game.dueAt!; game = advanceSharedGame(game, now); }
   const weak = deck.filter(card => ['2', '3', '4', '5'].includes(card.rank) && (card.suit === 'clubs' || card.rank !== '5'));
   const rest = deck.filter(card => !weak.some(item => item.id === card.id));
   game = { ...game, hands: [rest.slice(0, 13), weak, rest.slice(13, 26), rest.slice(26, 39)] };
@@ -95,4 +100,18 @@ test('someone without a seat can watch, and a seat opened after a round can be t
   expect(sharedView(game, watcher.id).spectating).toBe(false);
   game = applySharedAction(game, players[0].id, { type: 'restart' }, ++now);
   expect(game.phase).toBe('waiting');
+});
+
+test('winning names are captured before a winner leaves or their seat is replaced', () => {
+  let game = newSharedGame('result', -123, players[0], { breakTrump: false, reshuffleEnabled: false, reshuffleThreshold: 4 }, 1000);
+  for (const player of players.slice(1)) game = applySharedAction(game, player.id, { type: 'join', player }, 1001);
+  game = applySharedAction(game, 'one', { type: 'start' }, 1002);
+  game = advanceSharedGame({ ...game, phase: 'playing', shuffleStage: null, declarer: 0, partnerSeat: 1, bid: { level: 1, suit: 'clubs' }, counts: [6, 0, 0, 0], trickStatus: 'collecting', winner: 0, dueAt: 1003, plays: game.hands.map((hand, seat) => ({ seat, card: hand[0] })) }, 1003);
+  expect(game.phase).toBe('ended');
+  expect(game.winnerNames).toEqual(['@one', '@two']);
+  game = applySharedAction(game, 'two', { type: 'quit' }, 1004);
+  game = applySharedAction(game, 'replacement', { type: 'join', player: { id: 'replacement', username: '@new', initials: 'N' } }, 1005);
+  expect(sharedView(game, 'one').winnerNames).toEqual(['@one', '@two']);
+  game = applySharedAction(game, 'one', { type: 'restart' }, 1006);
+  expect(sharedView(game, 'one').winnerNames).toEqual([]);
 });

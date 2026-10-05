@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { sortCards } from '../game/bidding';
-import { joinLiveGame, liveAction, liveGame, type LiveContext } from '../game/telegram';
+import { joinLiveGame, liveAction, liveGame, RequestError, type LiveContext } from '../game/telegram';
 import type { SharedAction, SharedGameView } from '../game/shared';
 import type { Card } from '../types/game';
 import type { useTablePreview } from './useTablePreview';
@@ -15,6 +15,7 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
   const [canSpectate, setCanSpectate] = useState(false);
   const [watching, setWatching] = useState(false);
   const sending = useRef(false);
+  const retryMove = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!context) return;
@@ -38,7 +39,7 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
         try {
           const message = JSON.parse(event.data) as { type: string; state?: SharedGameView };
           if (!active) return;
-          if (message.type === 'state' && message.state) { update(message.state); setError(''); }
+          if (message.type === 'state' && message.state) update(message.state);
           if (message.type === 'removed') { removed = true; setView(null); setError('You have left this game.'); current.close(); }
         } catch { /* Ignore malformed connection messages. */ }
       };
@@ -91,27 +92,33 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     finally { sending.current = false; setPending(false); }
   }
 
-  async function send(action: SharedAction) {
+  async function send(action: SharedAction, actionId = crypto.randomUUID(), revision = view?.revision) {
     if (!context || sending.current) return;
     sending.current = true;
     setPending(true);
+    setError('');
+    retryMove.current = () => { void send(action, actionId, revision); };
     try {
-      const result = await liveAction(context, gameId, action);
+      const result = await liveAction(context, gameId, action, revision, actionId);
       if (result.state) setView(current => !current || result.state!.revision >= current.revision ? result.state : current);
       else setView(null);
       setError('');
+      retryMove.current = null;
     } catch (reason) {
+      if (reason instanceof RequestError && reason.status > 0 && reason.status < 500 && ![408, 429].includes(reason.status)) retryMove.current = null;
       try {
         const latest = await liveGame(context, gameId);
-        setView(latest.state);
-        if (view && latest.state.revision > view.revision) { setError(''); return; }
+        setView(current => !current || latest.state.revision >= current.revision ? latest.state : current);
       } catch { /* Keep the last known table. */ }
       setError(reason instanceof Error ? reason.message : 'Move could not be saved.');
     } finally { sending.current = false; setPending(false); }
   }
 
   const spectate = () => { setError(''); setCanSpectate(false); setWatching(true); };
-  if (!view || !context) return { table: null as Table | null, error, pending, canSpectate, spectate };
+  const retry = () => retryMove.current?.();
+  const dismissError = () => setError('');
+  const canRetry = retryMove.current !== null;
+  if (!view || !context) return { table: null as Table | null, error, pending, canSpectate, spectate, retry, dismissError, canRetry };
   const canonical = (visual: number) => (view.seatIndex + visual) % 4;
   const memberList = view.seats.filter((player): player is NonNullable<typeof player> => player !== null).map(player => ({ ...player, wins: view.wins[player.id] ?? 0 }));
   const table: Table = {
@@ -122,9 +129,10 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     round: view.round, bid: view.bid, declarer: view.declarer, partner: view.partner, partnerSeat: view.partnerSeat, announcementUntil: view.announcementUntil,
     declarerHand: view.declarerHand, cards: sortCards(view.cards), selected, active: view.active,
     plays: view.plays, counts: view.counts, trickStatus: view.trickStatus, winner: view.winner,
-    bids: view.bids, highestBid: view.highestBid, biddingBusy: view.biddingBusy,
+    bids: view.bids, highestBid: view.highestBid, biddingBusy: view.biddingBusy || pending,
     breakTrump: view.breakTrump, reshuffleEnabled: view.reshuffleEnabled, reshuffleThreshold: view.reshuffleThreshold,
-    shuffling: view.shuffling, shuffleReveal: view.shuffleReveal, canReshuffle: view.canReshuffle,
+    shuffling: view.shuffling, shuffleReveal: view.shuffleReveal, starting: view.starting, shuffleStart: view.shuffleStart, canReshuffle: view.canReshuffle && !pending,
+    winnerNames: view.winnerNames,
     spectators: view.spectators, spectating: view.spectating, spectatorHands: view.spectatorHands, joinSeat: () => { void joinSeat(); },
     revealedHands: view.revealedHands, goal: view.goal, outcome: view.outcome, validIds: view.validIds, ready: view.ready, notice: view.notice,
     callPartner: (card: Card) => { void send({ type: 'partner', card }); },
@@ -145,5 +153,5 @@ export function useLiveTable(gameId: string, context: LiveContext | undefined, f
     setReshuffleThreshold: threshold => { void send({ type: 'reshuffleSetting', enabled: view.reshuffleEnabled, threshold }); },
     requestReshuffle: () => { void send({ type: 'reshuffle' }); },
   };
-  return { table, error, pending, canSpectate, spectate };
+  return { table, error, pending, canSpectate, spectate, retry, dismissError, canRetry };
 }

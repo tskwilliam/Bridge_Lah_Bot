@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { groupToken, verifyGroupToken, verifyInitData } from '../worker/telegram';
+import { groupToken, issueSession, verifyGroupToken, verifyInitData } from '../worker/telegram';
 import worker from '../worker/index';
 
 const botToken = 'test-token-only';
@@ -64,4 +64,16 @@ test('group links cannot be changed to a different chat', async () => {
   const token = await groupToken(-100123456, 'local-link-test-secret');
   expect(await verifyGroupToken(token, 'local-link-test-secret')).toBe(-100123456);
   expect(await verifyGroupToken(token.replace('123456', '123457'), 'local-link-test-secret')).toBeNull();
+});
+
+test('the action endpoint forwards retry identity and revision to the authoritative room', async () => {
+  const secret = 'retry-test-secret';
+  const token = await issueSession({ id: 1, username: 'one' }, -123, secret);
+  let forwarded: unknown;
+  const env = { LINK_SECRET: secret, ROOMS: { idFromName: (id: string) => id, get: () => ({ fetch: async (request: Request) => { forwarded = await request.json(); return Response.json({ state: null }); } }) } } as unknown as Parameters<typeof worker.fetch>[1];
+  const response = await worker.fetch(new Request(`https://bridge.test/api/games/${'a'.repeat(32)}/actions`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Action-ID': 'same-move-identity', 'X-Game-Revision': '7' }, body: JSON.stringify({ type: 'bid', bid: null }),
+  }), env);
+  expect(response.status).toBe(200);
+  expect(forwarded).toMatchObject({ actionId: 'same-move-identity', revision: 7, action: { type: 'bid', bid: null } });
 });

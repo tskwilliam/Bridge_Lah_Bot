@@ -22,7 +22,7 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
       plays: [] as Play[], counts: initialPhase === 'ended' ? [9, 0, 0, 0] : [0, 0, 0, 0], trickStatus: 'playing' as 'playing' | 'holding' | 'collecting', winner: null as number | null,
       bids: [null, null, null, null] as (Bid | 'Pass' | null)[], auction: newAuction(0), sampleRaiseUsed: false, breakTrump: settings.breakTrump, trumpBroken: false,
       reshuffleEnabled: testReshuffle || settings.reshuffleEnabled, reshuffleThreshold: settings.reshuffleThreshold, testReshuffle: (testReshuffle ? 'initial' : null) as 'initial' | 'after-first' | 'done' | null, testSeat,
-      shuffling: false, shuffleReveal: false, notice: '', wins: Object.fromEntries(members.map(m => [m.id, 0])), games: Object.fromEntries(members.map(m => [m.id, 0])) };
+      shuffling: false, shuffleReveal: false, shuffleStart: false, starting: false, winnerNames: null as string[] | null, notice: '', wins: Object.fromEntries(members.map(m => [m.id, 0])), games: Object.fromEntries(members.map(m => [m.id, 0])) };
   }
   const [s, set] = useState(() => { if (!embedded) { try {
     const saved = JSON.parse(sessionStorage.getItem(key) ?? 'null') as ReturnType<typeof fresh> | null;
@@ -48,7 +48,12 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
     if (own >= 0 && s.activePlayers.includes(viewerId)) sessionStorage.setItem('bridge-resume:' + viewerId, gameId);
   }, [s, gameId, embedded, viewerId, own]);
   function reset(next: typeof s, phase: GamePhase = 'waiting'): typeof s {
-    return { ...next, phase, hands: dealHands(), selected: null, plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, announcementUntil: null, bids: [null, null, null, null], auction: newAuction(Math.max(0, next.seats.indexOf(next.dealerId))), sampleRaiseUsed: false, trumpBroken: false, shuffling: false, shuffleReveal: false, notice: '' };
+    return { ...next, phase, hands: dealHands(), selected: null, plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, announcementUntil: null, bids: [null, null, null, null], auction: newAuction(Math.max(0, next.seats.indexOf(next.dealerId))), sampleRaiseUsed: false, trumpBroken: false, shuffling: false, shuffleReveal: false, shuffleStart: false, starting: false, winnerNames: null, notice: '' };
+  }
+  function winners(state: typeof s) {
+    if (state.winnerNames) return state.winnerNames;
+    const result = roundOutcome(state.counts, state.declarer, state.partnerSeat, state.bid.level);
+    return result ? state.seats.filter((id, seat) => id && ((seat === state.declarer || seat === state.partnerSeat) === (result === 'declaring'))).map(id => members.find(member => member.id === id)!.username) : [];
   }
   function submitBid(value: Bid | null, seat: number) {
     set(prev => {
@@ -92,7 +97,7 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
       const result = roundOutcome(counts, prev.declarer, prev.partnerSeat, prev.bid.level);
       const wins = { ...prev.wins }, games = { ...prev.games };
       if (result) prev.seats.forEach((id, seat) => { if (!id) return; games[id] = (games[id] ?? 0) + 1; const declaring = seat === prev.declarer || seat === prev.partnerSeat; if (declaring === (result === 'declaring')) wins[id] = (wins[id] ?? 0) + 1; });
-      return { ...prev, counts, wins, games, phase: result ? 'ended' : 'playing', plays: [], selected: null, trickStatus: 'playing', playTurn: winner, trumpBroken: prev.trumpBroken || trumpWonTrick(prev.plays, prev.bid.suit) };
+      return { ...prev, counts, wins, games, winnerNames: result ? winners({ ...prev, counts }) : null, phase: result ? 'ended' : 'playing', plays: [], selected: null, trickStatus: 'playing', playTurn: winner, trumpBroken: prev.trumpBroken || trumpWonTrick(prev.plays, prev.bid.suit) };
     }), s.trickStatus === 'holding' ? TRICK_PAUSE_MS : 750);
     return () => clearTimeout(timer);
   }, [s.phase, s.plays, s.trickStatus, own]);
@@ -100,19 +105,22 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
     if (!s.shuffling) return;
     const timer = window.setTimeout(() => set(prev => {
       if (!prev.shuffling) return prev;
-      if (prev.shuffleReveal) return { ...prev, shuffling: false, shuffleReveal: false, notice: '' };
+      if (prev.shuffleStart) return { ...prev, shuffleStart: false };
+      if (prev.shuffleReveal) return { ...prev, shuffling: false, shuffleReveal: false, starting: false, notice: '' };
+      if (prev.starting) return { ...prev, shuffleReveal: true };
       const next = reset(prev, 'bidding');
       const dealt = prev.testReshuffle === 'after-first' ? { ...next, hands: dealWeakPreviewHand(prev.testSeat, true), testReshuffle: 'done' as const } : next;
       return { ...dealt, shuffling: true, shuffleReveal: true, notice: prev.notice };
-    }), s.shuffleReveal ? 350 : 2000);
+    }), s.shuffleStart ? 900 : s.shuffleReveal ? 350 : s.starting ? 1400 : 2000);
     return () => clearTimeout(timer);
-  }, [s.shuffling, s.shuffleReveal]);
+  }, [s.shuffling, s.shuffleReveal, s.shuffleStart, s.starting]);
   function leave(index: number) {
     if (index !== own && !dealer) return;
     const id = s.seats[index]; if (!id) return;
     const seats = s.seats.map((member, seat) => seat === index ? null : member);
     const dealerId = id === s.dealerId ? [1, 2, 3].map(offset => seats[(index + offset) % 4]).find(Boolean) ?? '' : s.dealerId;
-    const next = { ...reset({ ...s, seats, dealerId, activePlayers: s.activePlayers.filter(player => player !== id) }), notice: members.find(m => m.id === id)?.username + (index === own ? ' left.' : ' was kicked.') + (s.phase !== 'waiting' && s.phase !== 'ended' ? ' Round forfeited. Fill the seat to start again.' : ' Fill the seat to start.') };
+    const remaining = { ...s, seats, dealerId, activePlayers: s.activePlayers.filter(player => player !== id) };
+    const next = { ...(s.phase === 'ended' ? { ...remaining, winnerNames: winners(s), hands: s.hands.map((hand, seat) => seat === index ? [] : hand) } : reset(remaining)), notice: members.find(m => m.id === id)?.username + (index === own ? ' left.' : ' was kicked.') + (s.phase !== 'waiting' && s.phase !== 'ended' ? ' Round forfeited. Fill the seat to start again.' : '') };
     if (!embedded) {
       forgetPlayerInGame(gameId, id);
       if (next.activePlayers.some(player => next.seats.includes(player))) saveActiveGame(gameId, next);
@@ -123,11 +131,12 @@ export function useTablePreview(gameId: string, initialPhase: GamePhase, embedde
   return {
     members, viewerId, wins: s.wins, games: s.games, isDealer: dealer, phase: s.phase, seats: rotate(s.seats), dealerId: s.dealerId, round: s.round, bid: s.bid, declarer: visual(s.declarer), partner: s.partner, partnerSeat: visual(s.partnerSeat), announcementUntil: s.announcementUntil, callPartner,
     spectators: [] as { id: string; username: string; initials: string; photoUrl?: string }[], spectating: false, spectatorHands: null as Card[][] | null, joinSeat: () => undefined as void,
+    winnerNames: s.phase === 'ended' ? winners(s) : [], starting: s.starting ?? false, shuffleStart: s.shuffleStart ?? false,
     revealedHands: s.phase === 'ended' ? rotate(s.hands).map(hand => sortCards(hand)) : null, declarerHand: s.hands[s.declarer], cards: own < 0 ? [] : sortCards(s.hands[own]), selected: s.selected, active: visual(active), plays: s.plays.map(p => ({ ...p, seat: visual(p.seat) })), counts: rotate(s.counts), trickStatus: s.trickStatus, winner: s.winner === null ? null : visual(s.winner), bids: rotate(s.bids), highestBid: s.auction.highest, biddingBusy: active !== own || s.shuffling,
     placeBid: (value: Bid | null) => { if (own >= 0) submitBid(value, own); }, tapCard: (id: string) => { if (s.phase !== 'playing' || s.trickStatus !== 'playing' || (s.announcementUntil !== null && Date.now() < s.announcementUntil) || !validIds.includes(id)) return; if (s.selected !== id) set(prev => ({ ...prev, selected: id })); else if (active === own) { const card = s.hands[own].find(c => c.id === id); if (card) playCard(own, card); } },
     restart: () => { if (s.phase === 'ended') set(prev => reset({ ...prev, dealerId: prev.seats[(prev.seats.indexOf(prev.dealerId) + 1) % 4]!, round: prev.round + 1 })); },
     start: () => { if (ready && s.phase === 'waiting' && own >= 0) { if (!embedded) rememberPlayerSettings(viewerId, s); set(prev => {
-      const next = reset(prev, 'bidding');
+      const next = { ...reset(prev, 'bidding'), shuffling: true, shuffleStart: true, starting: true, notice: 'Start!' };
       return prev.testReshuffle === 'initial' ? { ...next, hands: dealWeakPreviewHand(prev.testSeat), testReshuffle: 'after-first' } : next;
     }); } }, goal: targets(s.bid.level), outcome, validIds, ready, notice: s.notice,
     removeSeat: (index: number) => { if (dealer && index !== 0) leave(canonical(index)); }, quit: () => { if (own >= 0) leave(own); },

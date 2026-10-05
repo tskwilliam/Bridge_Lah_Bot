@@ -28,8 +28,10 @@ export function LiveApp() {
       setError('');
     }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Could not connect to Telegram.'); });
     void refresh();
+    const renewed = (event: Event) => { if (active) setContext((event as CustomEvent<LiveContext>).detail); };
+    window.addEventListener('bridge-session-refreshed', renewed);
     const timer = window.setInterval(() => { void refresh(); }, 10 * 60 * 1000);
-    return () => { active = false; clearInterval(timer); };
+    return () => { active = false; clearInterval(timer); window.removeEventListener('bridge-session-refreshed', renewed); };
   }, []);
 
   function navigate(next: Screen) {

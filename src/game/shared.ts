@@ -32,10 +32,12 @@ export interface SharedGame {
   trumpBroken: boolean;
   reshuffleEnabled: boolean;
   reshuffleThreshold: number;
-  shuffleStage: 'cover' | 'reveal' | null;
+  shuffleStage: 'start' | 'cover' | 'reveal' | null;
   notice: string;
   wins: Record<string, number>;
   games: Record<string, number>;
+  winnerNames?: string[];
+  actionReceipts?: { id: string; userId: string; action: string }[];
   updatedAt: number;
 }
 
@@ -72,7 +74,13 @@ export function newSharedGame(id: string, groupId: number, first: SharedPlayer, 
 }
 
 function lobby(game: SharedGame): SharedGame {
-  return { ...game, phase: 'waiting', hands: emptyHands(), auction: newAuction(Math.max(0, game.seats.findIndex(player => player?.id === game.dealerId))), bids: [null, null, null, null], plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, dueAt: null, announcementUntil: null, trumpBroken: false, shuffleStage: null };
+  return { ...game, winnerNames: undefined, phase: 'waiting', hands: emptyHands(), auction: newAuction(Math.max(0, game.seats.findIndex(player => player?.id === game.dealerId))), bids: [null, null, null, null], plays: [], counts: [0, 0, 0, 0], trickStatus: 'playing', winner: null, dueAt: null, announcementUntil: null, trumpBroken: false, shuffleStage: null };
+}
+
+function roundWinnerNames(game: SharedGame) {
+  if (game.winnerNames) return game.winnerNames;
+  const outcome = roundOutcome(game.counts, game.declarer, game.partnerSeat, game.bid.level);
+  return outcome ? game.seats.filter((player, seat) => player && ((seat === game.declarer || seat === game.partnerSeat) === (outcome === 'declaring'))).map(player => player!.username) : [];
 }
 
 function playerSeat(game: SharedGame, userId: string) { return game.seats.findIndex(player => player?.id === userId); }
@@ -84,6 +92,7 @@ function assertJoinable(game: SharedGame) { if (game.phase !== 'waiting' && game
 
 export function advanceSharedGame(game: SharedGame, now: number): SharedGame {
   if (game.dueAt === null || now < game.dueAt) return game;
+  if (game.shuffleStage === 'start') return { ...game, shuffleStage: 'cover', dueAt: now + 1400, updatedAt: now };
   if (game.shuffleStage === 'cover') return { ...game, shuffleStage: 'reveal', dueAt: now + 350, updatedAt: now };
   if (game.shuffleStage === 'reveal') return { ...game, shuffleStage: null, notice: '', dueAt: null, updatedAt: now };
   if (game.phase !== 'playing' || game.plays.length !== 4) return { ...game, dueAt: null };
@@ -99,7 +108,7 @@ export function advanceSharedGame(game: SharedGame, now: number): SharedGame {
     const declaring = seat === game.declarer || seat === game.partnerSeat;
     if (declaring === (outcome === 'declaring')) wins[player.id] = (wins[player.id] ?? 0) + 1;
   });
-  return { ...game, counts, wins, games, phase: outcome ? 'ended' : 'playing', plays: [], trickStatus: 'playing', winner: null, playTurn: winner, trumpBroken: game.trumpBroken || trumpWonTrick(game.plays, game.bid.suit), dueAt: null, updatedAt: now };
+  return { ...game, counts, wins, games, winnerNames: outcome ? roundWinnerNames({ ...game, counts }) : undefined, phase: outcome ? 'ended' : 'playing', plays: [], trickStatus: 'playing', winner: null, playTurn: winner, trumpBroken: game.trumpBroken || trumpWonTrick(game.plays, game.bid.suit), dueAt: null, updatedAt: now };
 }
 
 export function applySharedAction(original: SharedGame, userId: string, action: SharedAction, now: number): SharedGame {
@@ -123,7 +132,7 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
     const nextDealer = removed.id === game.dealerId ? [1, 2, 3].map(offset => seats[(target + offset) % 4]).find(Boolean)?.id ?? '' : game.dealerId;
     const verb = action.type === 'quit' ? 'left' : 'was kicked';
     // The result is already counted, so the table keeps it on screen with the seat open.
-    if (game.phase === 'ended') return { ...game, seats, hands: game.hands.map((hand, seat) => seat === target ? [] : hand), dealerId: nextDealer, notice: `${removed.username} ${verb}.`, updatedAt: now };
+    if (game.phase === 'ended') return { ...game, winnerNames: roundWinnerNames(game), seats, hands: game.hands.map((hand, seat) => seat === target ? [] : hand), dealerId: nextDealer, notice: `${removed.username} ${verb}.`, updatedAt: now };
     return { ...lobby({ ...game, seats, dealerId: nextDealer }), notice: `${removed.username} ${verb}. Round forfeited.`, updatedAt: now };
   }
   if (action.type === 'swap') {
@@ -142,7 +151,7 @@ export function applySharedAction(original: SharedGame, userId: string, action: 
   if (action.type === 'start') {
     assertDealer(game, userId); assertWaiting(game);
     if (game.seats.some(player => !player)) invalid('Four players must join before starting.');
-    return { ...game, phase: 'bidding', hands: dealHands(), auction: newAuction(dealerSeat(game)), bids: [null, null, null, null], notice: '', updatedAt: now };
+    return { ...game, phase: 'bidding', hands: dealHands(), auction: newAuction(dealerSeat(game)), bids: [null, null, null, null], shuffleStage: 'start', dueAt: now + 900, notice: 'Start!', updatedAt: now };
   }
   if (action.type === 'bid') {
     if (game.phase !== 'bidding' || game.shuffleStage || game.auction.turn !== own) invalid('It is not your turn to bid.');
@@ -204,6 +213,8 @@ export function sharedView(game: SharedGame, userId: string, spectators: SharedP
     bids: rotate(game.bids), highestBid: game.auction.highest, breakTrump: game.breakTrump,
     reshuffleEnabled: game.reshuffleEnabled, reshuffleThreshold: game.reshuffleThreshold,
     shuffling: game.shuffleStage !== null, shuffleReveal: game.shuffleStage === 'reveal',
+    starting: game.notice === 'Start!' && game.shuffleStage !== null, shuffleStart: game.shuffleStage === 'start',
+    winnerNames: game.phase === 'ended' ? roundWinnerNames(game) : [],
     notice: game.notice, wins: game.wins, games: game.games, validIds,
     ready: game.seats.every(Boolean), isDealer: game.dealerId === userId,
     canReshuffle: !spectating && game.phase === 'bidding' && !game.shuffleStage && game.bids[own] === null && game.reshuffleEnabled && handStrength(cards) < game.reshuffleThreshold,
