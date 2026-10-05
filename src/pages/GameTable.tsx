@@ -112,9 +112,9 @@ export function GameTable({ gameId, initialPhase, embedded, host, onHome, live }
         frame.style.setProperty('--group-left', `${(landscape ? 20 + columnWidth / 2 : width / 2) - tableLayout.centerX * scale}px`);
         frame.style.setProperty('--group-top', `${upper + (lower - upper - 396 * scale) / 2 - 8 * scale}px`);
       }
-      if (desktop) {
-        // Leave breathing room around the complete group (seats and trick piles
-        // included), especially beside the hand in a wide desktop window.
+      if (desktop && landscape) {
+        // Landscape reserves extra room beside the hand. Portrait uses the full
+        // fitted size, retaining its edge padding and clearance above controls.
         const fittedSize = parseFloat(frame.style.getPropertyValue('--group-size'));
         const paddedSize = Math.min(460, fittedSize * .86);
         const insetScale = (fittedSize - paddedSize) / 420;
