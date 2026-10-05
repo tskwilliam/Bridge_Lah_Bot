@@ -77,3 +77,27 @@ test('the action endpoint forwards retry identity and revision to the authoritat
   expect(response.status).toBe(200);
   expect(forwarded).toMatchObject({ actionId: 'same-move-identity', revision: 7, action: { type: 'bid', bid: null } });
 });
+
+test('new game message includes the creator username', async () => {
+  const secret = 'create-game-test-secret';
+  const token = await issueSession({ id: 1, username: 'table_host' }, -123, secret);
+  const sent: unknown[] = [];
+  const env = {
+    BOT_TOKEN: botToken, BOT_USERNAME: '@bridge_lah_bot', BOT_APP_SHORT_NAME: 'play', LINK_SECRET: secret,
+    ROOMS: { idFromName: (id: string) => id, get: () => ({ fetch: async (request: Request) => {
+      if (new URL(request.url).pathname === '/create') return Response.json({ state: null });
+      return Response.json({ ok: true });
+    } }) },
+  } as unknown as Parameters<typeof worker.fetch>[1];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/getChatMember')) return Response.json({ ok: true, result: { status: 'member' } });
+    sent.push(JSON.parse(String(init?.body)));
+    return Response.json({ ok: true });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://bridge.test/api/games', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }), env);
+    expect(response.status).toBe(201);
+    expect(sent[0]).toMatchObject({ text: "Faster come join @table_host's Bridge Lah! table. Mai tu liao!" });
+  } finally { globalThis.fetch = originalFetch; }
+});

@@ -99,7 +99,7 @@ async function handleApi(request: Request, env: Env, url: URL) {
     if (!response.ok) return response;
     try {
       const link = appLink(env, `${await groupToken(session.chatId, env.LINK_SECRET)}__j_${id}`);
-      await botCall(env, 'sendMessage', { chat_id: session.chatId, text: 'New Bridge Lah! game. Four seats—mai tu liao!', reply_markup: { inline_keyboard: [[{ text: 'Take a seat', url: link }]] } });
+      await botCall(env, 'sendMessage', { chat_id: session.chatId, text: `Faster come join ${playerFrom(session.user).username}'s Bridge Lah! table. Mai tu liao!`, reply_markup: { inline_keyboard: [[{ text: 'Take a seat', url: link }]] } });
     } catch (error) {
       await roomCall(env, session.chatId, '/undo-create', { session, id });
       throw error;
