@@ -1296,6 +1296,12 @@ body { font-size: 16px; }.simple-app { background: var(--app-bg); }.suit-icon { 
 .simple-app.on-game .minimal-table[data-phase=ended] .lobby-actions { grid-template-rows: auto; }
 .simple-app.on-game .minimal-table[data-phase=ended][data-layout=landscape] .table-bottom { top: auto; bottom: 20px; }
 .simple-app.on-game .minimal-table[data-phase=ended] .remaining-cards { width: 100%; max-height: none; overflow: visible; margin: 0; gap: 4px; }
+.simple-app.on-game .minimal-table[data-layout=landscape][data-phase=waiting] .table-bottom,
+.simple-app.on-game .minimal-table[data-layout=landscape][data-phase=ended] .table-bottom {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
 .remaining-row { min-width: 0; height: 28px; }
 .remaining-name { width: clamp(65px, 24%, 110px); }
 .remaining-hand { position: relative; display: block; flex: 1; height: 28px; min-width: 0; }
